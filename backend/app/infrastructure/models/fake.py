@@ -106,3 +106,22 @@ class FakeModelClient:
         if self.sticky and len(self.responses) == 1:
             return self.responses[0]
         return self.responses.pop(0)
+
+
+@dataclass
+class FailingModelClient:
+    """A `ModelClient` that always raises a chosen classified failure.
+
+    Used by the failure evaluator (State 11) to prove that a provider timeout / rate limit reaches the
+    caller as the right `AgentError` and not as a bare exception.
+    """
+
+    error: Exception
+    provider: str = "fake"
+
+    async def complete(self, request: GenerationRequest) -> Completion:  # noqa: ARG002
+        raise self.error
+
+    async def stream(self, request: GenerationRequest) -> AsyncIterator[StreamChunk]:  # noqa: ARG002
+        raise self.error
+        yield StreamChunk()  # pragma: no cover - makes this an async generator

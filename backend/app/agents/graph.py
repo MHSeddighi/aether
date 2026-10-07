@@ -27,7 +27,7 @@ from app.agents.request import AgentEvent, AgentRequest
 from app.agents.state import STOP_MAX_STEPS, STOP_NO_TOOLS, AgentState
 from app.domain.conversations import ToolActivity, ToolActivityStatus
 from app.domain.deadline import Deadline
-from app.domain.failures import AgentError, FailureKind
+from app.domain.failures import AgentError, FailureKind, FailureReason, SecurityFailure
 from app.infrastructure.logging_config import get_logger
 from app.infrastructure.models.base import (
     ChatMessage,
@@ -280,6 +280,15 @@ class LangGraphRunner:
         executor = self._tool_executor or NoToolsConfigured()
         tool_id = call.name.replace("_", "-")
         contract = next((spec for spec in request.tools if spec.tool_id.replace("-", "_") == call.name), None)
+        if contract is None:
+            # The bot's declared tools are the authorization boundary. A model can hallucinate a
+            # tool name, or be prompt-injected into naming one; either way it is not declared, so it
+            # must never reach the gateway. Fail closed (Rule 20).
+            raise SecurityFailure(
+                FailureReason.UNAUTHORIZED_TOOL,
+                f"tool {call.name!r} is not declared by this bot",
+                details={"tool": call.name},
+            )
         await emit(AgentEvent(type="tool.started", data={"tool": call.name, "toolId": tool_id}))
         try:
             outcome = await executor.execute(
