@@ -40,7 +40,7 @@
     {
       "id": 7,
       "name": "tool-gateway",
-      "status": "pending"
+      "status": "passing"
     },
     {
       "id": 8,
@@ -239,7 +239,7 @@
     {
       "id": "tool-gateway",
       "description": "Gateway enforcing input schema, permissions, deadline, idempotency, output schema, error classification",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "valid input executes tool",
         "invalid input rejected before execution",

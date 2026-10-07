@@ -35,6 +35,10 @@ class ToolSpec(BaseModel):
     output_schema: dict[str, Any] = Field(default_factory=dict)
     timeout_seconds: float = 20.0
     permissions: tuple[ToolPermission, ...] = ()
+    #: How the Tool Gateway runs this tool: `builtin` | `http` | `docker` (State 10).
+    handler: str = "builtin"
+    #: Selects the concrete builtin (`python_math`, `knowledge_search`, ...) or the http target.
+    handler_config: dict[str, Any] = Field(default_factory=dict)
 
     def as_openai_tool(self) -> dict[str, Any]:
         """Provider-neutral function definition; the adapter renders it in the provider's dialect."""

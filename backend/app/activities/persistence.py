@@ -313,6 +313,8 @@ def _tool_spec(tool) -> ToolSpec:
         output_schema=active.output_schema if active else {},
         timeout_seconds=active.timeout_seconds if active else 20.0,
         permissions=active.permissions if active else (),
+        handler=active.handler if active else "builtin",
+        handler_config=dict(active.handler_config) if active else {},
     )
 
 

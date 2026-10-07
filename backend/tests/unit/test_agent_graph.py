@@ -82,7 +82,7 @@ class RecordingToolExecutor(ToolExecutor):
         arguments: dict[str, Any],
         deadline: Deadline,
         idempotency_key: str,
-        tool: Any | None = None,  # noqa: ARG002 - kept for protocol parity
+        tool: Any | None = None,
     ) -> ToolOutcome:
         self.calls.append(
             {
@@ -271,7 +271,7 @@ class TestFailureHandling:
 
     async def test_model_failure_propagates_for_retry(self) -> None:
         class FailingClient(FakeModelClient):
-            async def stream(self, request):  # noqa: ARG002
+            async def stream(self, request):
                 raise ModelFailure(FailureReason.MODEL_RATE_LIMITED, "slow down")
                 yield StreamChunk()  # pragma: no cover
 
@@ -288,7 +288,7 @@ class TestFailureHandling:
 
     async def test_cancellation_propagates(self) -> None:
         class CancellingClient(FakeModelClient):
-            async def stream(self, request):  # noqa: ARG002
+            async def stream(self, request):
                 raise CancelledFailure()
                 yield StreamChunk()  # pragma: no cover
 

@@ -229,6 +229,7 @@ class LangGraphRunner:
 
         executor = self._tool_executor or NoToolsConfigured()
         tool_id = call.name.replace("_", "-")
+        contract = next((spec for spec in request.tools if spec.tool_id.replace("-", "_") == call.name), None)
         await emit(AgentEvent(type="tool.started", data={"tool": call.name, "toolId": tool_id}))
         try:
             outcome = await executor.execute(
@@ -237,7 +238,7 @@ class LangGraphRunner:
                 arguments=call.arguments,
                 deadline=deadline or Deadline.in_seconds(request.model.timeout_seconds),
                 idempotency_key=f"{request.run_id}:{call.id}",
-                tool=None,
+                tool=contract,
             )
         except AgentError as failure:
             if failure.kind is FailureKind.SECURITY:
