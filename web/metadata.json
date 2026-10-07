@@ -1,0 +1,6 @@
+{
+  "name": "Aether AI Agent Workspace",
+  "description": "Next-generation AI agent development workspace for designing, experimenting, running, observing, and iterating on autonomous agents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

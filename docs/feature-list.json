@@ -1,0 +1,282 @@
+{
+  "project": "bot-builder-backend",
+  "updated": "2026-10-07",
+  "states": [
+    { "id": 0, "name": "frontend-inspection", "status": "passing" },
+    { "id": 1, "name": "backend-foundation", "status": "pending" },
+    { "id": 2, "name": "database-domain-model", "status": "pending" },
+    { "id": 3, "name": "temporal-foundation", "status": "pending" },
+    { "id": 4, "name": "model-gateway", "status": "pending" },
+    { "id": 5, "name": "langgraph-agent", "status": "pending" },
+    { "id": 6, "name": "validation-and-failure-states", "status": "pending" },
+    { "id": 7, "name": "tool-gateway", "status": "pending" },
+    { "id": 8, "name": "run-api-and-cancellation", "status": "pending" },
+    { "id": 9, "name": "sse-streaming", "status": "pending" },
+    { "id": 10, "name": "build-workflow-and-sandbox", "status": "pending" },
+    { "id": 11, "name": "evaluation-layer", "status": "pending" },
+    { "id": 12, "name": "end-to-end-testing", "status": "pending" },
+    { "id": 13, "name": "architecture-cleanup", "status": "pending" }
+  ],
+  "features": [
+    {
+      "id": "state-0-contract",
+      "description": "Backend contract derived from existing frontend behaviour (types, lifecycles, SSE needs)",
+      "status": "passing",
+      "tests": [
+        "docs/api-contract.md maps every frontend type in web/src/types/agent.ts to a table/route",
+        "every documented endpoint is justified by an observed frontend action"
+      ]
+    },
+    {
+      "id": "settings-and-app-factory",
+      "description": "Typed settings from env, FastAPI app factory, structured logs, request id, typed error envelope, health probes",
+      "status": "pending",
+      "tests": [
+        "settings load from env and reject missing required values",
+        "app boots and GET /healthz returns 200 without infrastructure",
+        "typed error envelope renders for validation and domain errors",
+        "every response carries X-Request-Id"
+      ]
+    },
+    {
+      "id": "jwt-auth",
+      "description": "Register/login/refresh with hashed passwords; user + workspace rows; workspace-scoped access",
+      "status": "pending",
+      "tests": [
+        "register creates user + workspace and returns access/refresh tokens",
+        "duplicate email rejected",
+        "wrong password rejected with 401",
+        "expired/invalid token rejected",
+        "protected route without token returns 401",
+        "cross-workspace access returns 404"
+      ]
+    },
+    {
+      "id": "domain-model",
+      "description": "Domain models mirroring frontend types: Bot, BotVersion, Tool, ToolVersion, KnowledgeSource, Conversation, Message, Run, RunEvent, User, Workspace",
+      "status": "pending",
+      "tests": [
+        "derived model label is humanized and stable",
+        "deterministic bot requires rules and forbids model config",
+        "bot version bump is immutable",
+        "knowledge status enum matches frontend literals"
+      ]
+    },
+    {
+      "id": "postgres-schema",
+      "description": "SQLAlchemy 2.0 models + Alembic migrations for all aggregates; constraints for immutable bot versions and unique run event sequence",
+      "status": "pending",
+      "tests": [
+        "migration up/down on a real postgres",
+        "bot_versions rows cannot be updated (trigger or guard)",
+        "run_events (run_id, seq) unique",
+        "runs reference an immutable bot_version_id and captured model config"
+      ]
+    },
+    {
+      "id": "bot-service",
+      "description": "Create/list/get/patch/soft-delete bots; PATCH appends a new immutable version",
+      "status": "pending",
+      "tests": [
+        "create returns BotItem shape with version 1.0.0",
+        "patch appends a version and does not mutate history",
+        "archive sets status archived",
+        "list is workspace scoped"
+      ]
+    },
+    {
+      "id": "tool-service",
+      "description": "Tool + ToolVersion CRUD with schemas, timeout, permissions",
+      "status": "pending",
+      "tests": [
+        "tool versions are immutable",
+        "invalid input_schema rejected",
+        "list is workspace scoped"
+      ]
+    },
+    {
+      "id": "knowledge-ingestion",
+      "description": "Multipart upload creates File + KnowledgeSource rows with status Uploading; indexing advanced by a Temporal workflow",
+      "status": "pending",
+      "tests": [
+        "upload returns 202 with Uploading items",
+        "indexing workflow advances Processing -> Indexing -> Ready",
+        "failure marks Failed with error detail",
+        "files are stored outside the database on a data volume"
+      ]
+    },
+    {
+      "id": "temporal-foundation",
+      "description": "Temporal client + worker bootstrap, task queues, workflow sandbox-safe logger, activity error classification",
+      "status": "pending",
+      "tests": [
+        "worker registers activities and workflows",
+        "temporary test environment executes a trivial workflow",
+        "activity timeout is enforced",
+        "permanent failures are marked non-retryable"
+      ]
+    },
+    {
+      "id": "run-workflow",
+      "description": "RunAgentWorkflow: load immutable bot version -> checkpoint -> execute agent -> validate -> persist result, all via activities",
+      "status": "pending",
+      "tests": [
+        "deterministic (simple) bot completes without a model call",
+        "successful agent run persists an assistant message",
+        "agent failure persists failure classification and run status",
+        "cancellation results in run status cancelled",
+        "workflow is deterministic under replay of history"
+      ]
+    },
+    {
+      "id": "model-gateway",
+      "description": "ModelClient port with OpenAI-compatible adapter (openrouter/opencode/deepseek config), catalog clients, fake client, timeout + cancellation + error normalisation",
+      "status": "pending",
+      "tests": [
+        "generate maps to the provider base_url and auth header",
+        "fenced JSON is normalised",
+        "reasoning_content never leaks into application output",
+        "timeout raises a retryable model failure",
+        "429/5xx classified retryable, 400/401 non-retryable",
+        "streaming yields normalized deltas",
+        "fake client used in tests returns deterministic responses"
+      ]
+    },
+    {
+      "id": "model-catalog",
+      "description": "Configured provider catalogues (no hard-coded free model list) exposed via GET /models",
+      "status": "pending",
+      "tests": [
+        "catalog reads provider /models endpoint when reachable",
+        "unreachable provider degrades to the configured fallback list",
+        "GET /models returns provider, model_id, label, free flag"
+      ]
+    },
+    {
+      "id": "langgraph-agent",
+      "description": "State graph (plan -> act/tools -> answer) driven by ModelClient and ToolGateway, streaming deltas as events",
+      "status": "pending",
+      "tests": [
+        "graph produces an answer with no tools",
+        "graph executes a tool call and uses the result",
+        "graph stops at max_steps",
+        "cancellation stops the graph"
+      ]
+    },
+    {
+      "id": "output-validation-repair",
+      "description": "Pydantic schemas at the AI boundary, bounded self-repair (max 3), explicit failure states",
+      "status": "pending",
+      "tests": [
+        "valid output accepted",
+        "invalid output triggers repair",
+        "repair succeeds on second attempt",
+        "repair budget exhausted -> failure_kind validation",
+        "business constraint violation rejected"
+      ]
+    },
+    {
+      "id": "tool-gateway",
+      "description": "Gateway enforcing input schema, permissions, deadline, idempotency, output schema, error classification",
+      "status": "pending",
+      "tests": [
+        "valid input executes tool",
+        "invalid input rejected before execution",
+        "unknown tool rejected",
+        "permission denied is a non-retryable security failure",
+        "timeout raises a retryable tool failure",
+        "deadline is clamped to the remaining budget",
+        "idempotency key replays the stored result",
+        "invalid tool output rejected"
+      ]
+    },
+    {
+      "id": "run-api",
+      "description": "POST /runs starts a workflow and returns run_id; GET /runs/{id}; POST /runs/{id}/cancel",
+      "status": "pending",
+      "tests": [
+        "POST /runs returns 202 with run_id and queued status",
+        "GET /runs returns captured provider/model config",
+        "cancel on a finished run is a no-op 409/200",
+        "cancel on a running run cancels the workflow",
+        "disabled bot cannot start a run"
+      ]
+    },
+    {
+      "id": "conversation-api",
+      "description": "Conversation + message endpoints mirroring ChatConversation/ChatMessage",
+      "status": "pending",
+      "tests": [
+        "list returns metadata without messages",
+        "detail returns full message list",
+        "sending a message creates user message + run and a streaming assistant placeholder",
+        "feedback recorded",
+        "rename/pin/delete work"
+      ]
+    },
+    {
+      "id": "sse-streaming",
+      "description": "GET /runs/{id}/events history and GET /runs/{id}/stream live SSE with monotonic seq and Last-Event-ID resume",
+      "status": "pending",
+      "tests": [
+        "events endpoint returns persisted events with seq",
+        "stream replays missed events from Last-Event-ID",
+        "stream sends heartbeat comments",
+        "terminal event closes the stream",
+        "event types match the documented contract"
+      ]
+    },
+    {
+      "id": "knowledge-indexing-workflow",
+      "description": "IndexKnowledgeWorkflow advances knowledge status with checkpoints and progress",
+      "status": "pending",
+      "tests": [
+        "status transitions are recorded in order",
+        "retry does not double count chunks",
+        "cancellation leaves a resumable state"
+      ]
+    },
+    {
+      "id": "build-workflow-sandbox",
+      "description": "BuildBotWorkflow with checkpoints (spec -> code -> validate -> docker build -> sandbox test -> publish) and a locked-down Docker sandbox",
+      "status": "pending",
+      "tests": [
+        "each checkpoint is durable and resumable",
+        "generated code runs with no network, cpu/memory/pids limits",
+        "build failures are classified and retried per policy",
+        "docker socket and secrets are not exposed to the sandbox"
+      ]
+    },
+    {
+      "id": "evaluation-layer",
+      "description": "Deterministic output/failure/security evaluators plus regression cases across bot versions",
+      "status": "pending",
+      "tests": [
+        "output evaluator rejects missing fields",
+        "failure evaluator injects model timeout and tool failure",
+        "security evaluator blocks prompt injection and unauthorized tool use",
+        "regression cases run against two bot versions"
+      ]
+    },
+    {
+      "id": "end-to-end",
+      "description": "End-to-end test of frontend-shaped API -> FastAPI -> Temporal -> agent -> model (fake) -> tool -> Postgres -> SSE",
+      "status": "pending",
+      "tests": [
+        "chat message produces a streamed assistant reply over SSE",
+        "cancellation mid-stream terminates the run",
+        "deterministic bot returns an instant reply"
+      ]
+    },
+    {
+      "id": "architecture-cleanup",
+      "description": "Final SOLID/clean-code pass: no dead code, no duplicated infrastructure, dependency direction respected",
+      "status": "pending",
+      "tests": [
+        "no module in app/domain imports infrastructure",
+        "lint and typecheck clean",
+        "full test suite green"
+      ]
+    }
+  ]
+}

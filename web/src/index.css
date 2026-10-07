@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --md-sys-color-primary: #0f766e;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #ccfbf1;
+    --md-sys-color-on-primary-container: #115e59;
+    --md-sys-color-secondary: #475569;
+    --md-sys-color-secondary-container: #e2e8f0;
+    --md-sys-color-on-secondary-container: #1e293b;
+    --md-sys-color-surface: #f8fafc;
+    --md-sys-color-surface-container: #e9eef5;
+    --md-sys-color-surface-container-high: #dfe5ee;
+    --md-sys-color-surface-container-highest: #d5dbe5;
+    --md-sys-color-on-surface: #0f172a;
+    --md-sys-color-on-surface-variant: #64748b;
+    --md-sys-color-outline: rgba(100, 116, 139, 0.22);
+    --md-sys-color-outline-variant: rgba(100, 116, 139, 0.12);
+    --md-sys-color-error: #dc2626;
+    --md-sys-color-error-container: #fee2e2;
+    --md-sys-color-on-error: #ffffff;
+
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  :root.dark {
+    --md-sys-color-primary: #2dd4bf;
+    --md-sys-color-on-primary: #042f2e;
+    --md-sys-color-primary-container: #134e4a;
+    --md-sys-color-on-primary-container: #99f6e4;
+    --md-sys-color-secondary: #94a3b8;
+    --md-sys-color-secondary-container: #1e293b;
+    --md-sys-color-on-secondary-container: #cbd5e1;
+    --md-sys-color-surface: #0c0f14;
+    --md-sys-color-surface-container: #161a22;
+    --md-sys-color-surface-container-high: #1e232e;
+    --md-sys-color-surface-container-highest: #272d3b;
+    --md-sys-color-on-surface: #f1f5f9;
+    --md-sys-color-on-surface-variant: #94a3b8;
+    --md-sys-color-outline: rgba(148, 163, 184, 0.16);
+    --md-sys-color-outline-variant: rgba(148, 163, 184, 0.08);
+    --md-sys-color-error: #f87171;
+    --md-sys-color-error-container: rgba(239, 68, 68, 0.15);
+    --md-sys-color-on-error: #450a0a;
+  }
+
+  [dir="rtl"], [lang="fa"] {
+    font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, sans-serif !important;
+    letter-spacing: normal !important;
+    word-spacing: normal;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3, [dir="rtl"] h4 {
+    letter-spacing: normal !important;
+    line-height: 1.45;
+  }
+
+  [dir="rtl"] p, [dir="rtl"] span, [dir="rtl"] textarea, [dir="rtl"] input, [dir="rtl"] button {
+    letter-spacing: normal !important;
+  }
+
+  [dir="rtl"] .tracking-tight, [dir="rtl"] .tracking-tighter {
+    letter-spacing: normal !important;
+  }
+
+  code, pre, kbd, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+body {
+  background-color: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  min-height: 100vh;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Subtle, calm scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-outline);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-sys-color-on-surface-variant);
+}
+
+/* Accessible focus rings, drawn INSIDE the element so they never push layout
+   and never read as a separator line. Text fields opt out entirely. */
+:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[contenteditable]:focus-visible {
+  outline: none;
+}
