@@ -1,8 +1,8 @@
 """Liveness and readiness.
 
 `/healthz` touches nothing. `/readyz` reports dependency checks; each check is registered by the
-component that owns it (Postgres in `infrastructure.database`, Temporal in `infrastructure.temporal`)
-so this module stays free of infrastructure imports.
+component that owns it (Postgres in `infrastructure.database`, Temporal in
+`infrastructure.temporal`) so this module stays free of infrastructure imports.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class ReadinessRegistry:
         for name, check in self.checks.items():
             try:
                 results[name] = bool(await check())
-            except Exception:  # noqa: BLE001 - a failing probe must not fail the probe endpoint
+            except Exception:
                 results[name] = False
         return results
 

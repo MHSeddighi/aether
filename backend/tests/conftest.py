@@ -5,10 +5,9 @@ from __future__ import annotations
 import os
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.api.app import create_app
 from app.infrastructure.config import Settings
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture

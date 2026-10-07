@@ -10,6 +10,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
 
 class FailureKind(StrEnum):
     MODEL = "model"
@@ -145,7 +147,8 @@ class SecurityFailure(AgentError):
         *,
         details: dict[str, Any] | None = None,
     ) -> None:
-        # Security failures are never retryable and never repairable, whatever the reason table says.
+        # Security failures are never retryable and never repairable, whatever the reason table
+        # says.
         super().__init__(reason, message, details=details, retryable=False, repairable=False)
 
 
@@ -163,24 +166,16 @@ class DeadlineExceededFailure(AgentError):
         super().__init__(FailureReason.DEADLINE_EXCEEDED, message, details=details)
 
 
-class RunFailure:
-    """Persisted projection of a failure, returned by the API (Rule 19)."""
+class RunFailure(BaseModel):
+    """Persisted projection of a failure, embedded in `Run` and returned by the API (Rule 19)."""
 
-    __slots__ = ("kind", "reason", "message", "retryable", "details")
+    model_config = ConfigDict(frozen=True)
 
-    def __init__(
-        self,
-        kind: FailureKind,
-        reason: FailureReason,
-        message: str,
-        retryable: bool,
-        details: dict[str, Any] | None = None,
-    ) -> None:
-        self.kind = kind
-        self.reason = reason
-        self.message = message
-        self.retryable = retryable
-        self.details = details or {}
+    kind: FailureKind
+    reason: FailureReason
+    message: str
+    retryable: bool
+    details: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_error(cls, error: AgentError) -> RunFailure:
@@ -193,10 +188,4 @@ class RunFailure:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "kind": str(self.kind),
-            "reason": str(self.reason),
-            "message": self.message,
-            "retryable": self.retryable,
-            "details": self.details,
-        }
+        return self.model_dump(mode="json")

@@ -7,8 +7,8 @@ Ids are opaque strings to the frontend (`bot-general`, `msg-1`, ...), so the bac
 from __future__ import annotations
 
 import os
-import time
 import secrets
+import time
 
 _B32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford base32, no I/L/O/U
 

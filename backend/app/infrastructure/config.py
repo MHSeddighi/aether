@@ -174,9 +174,7 @@ class Settings(BaseSettings):
 
     def default_model_id_for(self, provider: str) -> str:
         cfg = self.provider(provider)
-        return self.default_model_id if provider == self.default_provider else (
-            cfg.default_model_id or ""
-        )
+        return self.default_model_id if provider == self.default_provider else (cfg.default_model_id or "")
 
 
 @lru_cache(maxsize=1)

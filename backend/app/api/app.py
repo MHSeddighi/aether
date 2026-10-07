@@ -50,5 +50,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 def _register_routers(app: FastAPI, settings: Settings) -> None:
-    """Feature routers are added as their state lands (States 2, 3, 8, 9)."""
-    return None
+    """Feature routers are registered here as their state lands (States 2, 3, 8, 9)."""
+    del app, settings  # nothing to register yet; kept as the single wiring point
+    return

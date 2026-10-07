@@ -6,15 +6,13 @@ import json
 import logging
 
 import pytest
-from fastapi.testclient import TestClient
-from pydantic import SecretStr, ValidationError
-
-from app.api.app import create_app
 from app.api.errors import ApiError, ConflictError, NotFoundError
 from app.api.routes import health
 from app.domain.ids import new_id
 from app.infrastructure.config import ProviderConfig, Settings
 from app.infrastructure.logging_config import JsonFormatter, configure_logging
+from fastapi.testclient import TestClient
+from pydantic import SecretStr, ValidationError
 
 
 class TestSettings:
@@ -26,8 +24,7 @@ class TestSettings:
 
     def test_unknown_provider_is_rejected(self) -> None:
         with pytest.raises(ValidationError, match="unknown providers"):
-            Settings(providers={"ollama": ProviderConfig(name="opencode", base_url="x")},
-                     _env_file=None)
+            Settings(providers={"ollama": ProviderConfig(name="opencode", base_url="x")}, _env_file=None)
 
     def test_api_key_reads_from_named_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")

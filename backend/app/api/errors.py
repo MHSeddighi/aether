@@ -16,6 +16,9 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.domain.failures import AgentError
+from app.infrastructure.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +153,7 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("unhandled error", exc_info=exc)
         return _error_response(
             request,
             status_code=500,

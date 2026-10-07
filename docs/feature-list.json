@@ -2,20 +2,76 @@
   "project": "bot-builder-backend",
   "updated": "2026-10-07",
   "states": [
-    { "id": 0, "name": "frontend-inspection", "status": "passing" },
-    { "id": 1, "name": "backend-foundation", "status": "pending" },
-    { "id": 2, "name": "database-domain-model", "status": "pending" },
-    { "id": 3, "name": "temporal-foundation", "status": "pending" },
-    { "id": 4, "name": "model-gateway", "status": "pending" },
-    { "id": 5, "name": "langgraph-agent", "status": "pending" },
-    { "id": 6, "name": "validation-and-failure-states", "status": "pending" },
-    { "id": 7, "name": "tool-gateway", "status": "pending" },
-    { "id": 8, "name": "run-api-and-cancellation", "status": "pending" },
-    { "id": 9, "name": "sse-streaming", "status": "pending" },
-    { "id": 10, "name": "build-workflow-and-sandbox", "status": "pending" },
-    { "id": 11, "name": "evaluation-layer", "status": "pending" },
-    { "id": 12, "name": "end-to-end-testing", "status": "pending" },
-    { "id": 13, "name": "architecture-cleanup", "status": "pending" }
+    {
+      "id": 0,
+      "name": "frontend-inspection",
+      "status": "passing"
+    },
+    {
+      "id": 1,
+      "name": "backend-foundation",
+      "status": "passing"
+    },
+    {
+      "id": 2,
+      "name": "database-domain-model",
+      "status": "passing"
+    },
+    {
+      "id": 3,
+      "name": "temporal-foundation",
+      "status": "pending"
+    },
+    {
+      "id": 4,
+      "name": "model-gateway",
+      "status": "pending"
+    },
+    {
+      "id": 5,
+      "name": "langgraph-agent",
+      "status": "pending"
+    },
+    {
+      "id": 6,
+      "name": "validation-and-failure-states",
+      "status": "pending"
+    },
+    {
+      "id": 7,
+      "name": "tool-gateway",
+      "status": "pending"
+    },
+    {
+      "id": 8,
+      "name": "run-api-and-cancellation",
+      "status": "pending"
+    },
+    {
+      "id": 9,
+      "name": "sse-streaming",
+      "status": "pending"
+    },
+    {
+      "id": 10,
+      "name": "build-workflow-and-sandbox",
+      "status": "pending"
+    },
+    {
+      "id": 11,
+      "name": "evaluation-layer",
+      "status": "pending"
+    },
+    {
+      "id": 12,
+      "name": "end-to-end-testing",
+      "status": "pending"
+    },
+    {
+      "id": 13,
+      "name": "architecture-cleanup",
+      "status": "pending"
+    }
   ],
   "features": [
     {
@@ -30,7 +86,7 @@
     {
       "id": "settings-and-app-factory",
       "description": "Typed settings from env, FastAPI app factory, structured logs, request id, typed error envelope, health probes",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "settings load from env and reject missing required values",
         "app boots and GET /healthz returns 200 without infrastructure",
@@ -54,7 +110,7 @@
     {
       "id": "domain-model",
       "description": "Domain models mirroring frontend types: Bot, BotVersion, Tool, ToolVersion, KnowledgeSource, Conversation, Message, Run, RunEvent, User, Workspace",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "derived model label is humanized and stable",
         "deterministic bot requires rules and forbids model config",
@@ -65,13 +121,15 @@
     {
       "id": "postgres-schema",
       "description": "SQLAlchemy 2.0 models + Alembic migrations for all aggregates; constraints for immutable bot versions and unique run event sequence",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "migration up/down on a real postgres",
         "bot_versions rows cannot be updated (trigger or guard)",
         "run_events (run_id, seq) unique",
-        "runs reference an immutable bot_version_id and captured model config"
-      ]
+        "runs reference an immutable bot_version_id and captured model config",
+        "verified in this environment by applying the generated migration SQL to a real Postgres engine (PGlite 0.5.8 / PG 18 WASM) because the Docker registry is unreachable here"
+      ],
+      "notes": "tests/integration/test_database.py is written and gated on TEST_DATABASE_URL; run with ./scripts/init.sh migrate && RUN_INTEGRATION=1 ./scripts/init.sh test"
     },
     {
       "id": "bot-service",
