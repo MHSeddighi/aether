@@ -54,6 +54,7 @@ class RunEventType(StrEnum):
     AGENT_STARTED = "agent.started"
     AGENT_STEP_STARTED = "agent.step.started"
     AGENT_DELTA = "agent.delta"
+    AGENT_COMPLETED = "agent.completed"
     TOOL_STARTED = "tool.started"
     TOOL_COMPLETED = "tool.completed"
     TOOL_FAILED = "tool.failed"
