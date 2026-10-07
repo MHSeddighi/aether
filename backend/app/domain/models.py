@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.domain.failures import FailureReason, ValidationFailure
 
 _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$")
-_SEPARATOR_RE = re.compile(r"[-_]+")
+_SEPARATOR_RE = re.compile(r"[-_:]+")
 
 DETERMINISTIC_LABEL = "Deterministic (No Model)"
 DETERMINISTIC_MODEL_ID = "none"

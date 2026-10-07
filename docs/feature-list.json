@@ -25,7 +25,7 @@
     {
       "id": 4,
       "name": "model-gateway",
-      "status": "pending"
+      "status": "passing"
     },
     {
       "id": 5,
@@ -191,7 +191,7 @@
     {
       "id": "model-gateway",
       "description": "ModelClient port with OpenAI-compatible adapter (openrouter/opencode/deepseek config), catalog clients, fake client, timeout + cancellation + error normalisation",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "generate maps to the provider base_url and auth header",
         "fenced JSON is normalised",
@@ -199,13 +199,14 @@
         "timeout raises a retryable model failure",
         "429/5xx classified retryable, 400/401 non-retryable",
         "streaming yields normalized deltas",
-        "fake client used in tests returns deterministic responses"
+        "fake client used in tests returns deterministic responses",
+        "live end-to-end call to opencode/space-bunny-free: completion, tool call, json_schema, streaming and catalogue all pass (LIVE_PROVIDER=opencode LIVE_MODEL=space-bunny-free)"
       ]
     },
     {
       "id": "model-catalog",
       "description": "Configured provider catalogues (no hard-coded free model list) exposed via GET /models",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "catalog reads provider /models endpoint when reachable",
         "unreachable provider degrades to the configured fallback list",

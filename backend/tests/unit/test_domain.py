@@ -107,6 +107,7 @@ class TestModelConfig:
             ("deepseek/deepseek-v4.1-flash", "Deepseek V4.1 Flash"),
             ("glm-5.3-flash", "Glm 5.3 Flash"),
             ("gpt_5_nano", "Gpt 5 Nano"),
+            ("z-ai/glm-4.5:free", "Glm 4.5 Free"),
         ],
     )
     def test_labels_are_derived_deterministically(self, model_id: str, expected: str) -> None:
