@@ -149,6 +149,14 @@ class Settings(BaseSettings):
     agent_run_timeout_seconds: float = Field(default=180.0, gt=0)
     agent_max_repairs: int = Field(default=2, ge=0, le=5)
 
+    # --- run event stream (SSE) ---
+    #: How often `GET /runs/{id}/stream` re-reads the durable event table. There is no broker to
+    #: subscribe to (Rule 2/27): the terminal event is written by the worker, so this bounds how
+    #: long a client waits to learn the run finished.
+    event_poll_interval_seconds: float = Field(default=0.4, gt=0, le=30)
+    #: Backstop so a stream that never sees a terminal event still closes.
+    event_stream_max_seconds: float = Field(default=900.0, gt=0, le=86400)
+
     # --- sandbox (State 10) ---
     sandbox_image: str = "python:3.12-slim"
     sandbox_network: str = "none"

@@ -18,6 +18,7 @@ from app.api.routes import (
     auth,
     bots,
     conversations,
+    events,
     health,
     knowledge,
     models,
@@ -97,6 +98,6 @@ async def _temporal_ping(app: FastAPI) -> bool:
 
 def _register_routers(app: FastAPI, settings: Settings) -> None:
     """Every router the product exposes, mounted under the versioned prefix."""
-    for module in (auth, bots, tools, knowledge, conversations, runs, models):
+    for module in (auth, bots, tools, knowledge, conversations, runs, events, models):
         app.include_router(module.router, prefix=settings.api_prefix)
-    logger.info("routers registered", extra={"prefix": settings.api_prefix, "count": 7})
+    logger.info("routers registered", extra={"prefix": settings.api_prefix, "count": 8})

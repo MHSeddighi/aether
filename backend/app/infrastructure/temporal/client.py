@@ -76,6 +76,10 @@ class TemporalConnection:
         return True
 
     async def aclose(self) -> None:
-        client, self._client = self._client, None
-        if client is not None:
-            await client.close()
+        """Release the cached client.
+
+        The Temporal Python SDK exposes no `close()` — the gRPC channel belongs to the Rust bridge
+        and lives for the process. Dropping the reference is therefore the whole of the shutdown
+        story, and it is enough: the next call reconnects.
+        """
+        self._client = None

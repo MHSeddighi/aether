@@ -321,6 +321,54 @@ class TestToolsAndKnowledgeWithRealPostgres:
         assert client.get(f"{PREFIX}/knowledge", headers=headers).json() == []
 
 
+class TestEventStreamWithRealPostgres:
+    """The stream is a read of the durable table, so the real thing must behave the same way."""
+
+    async def test_events_are_persisted_with_gap_free_sequence_numbers(
+        self, client: TestClient, settings: Settings
+    ) -> None:
+        _, headers = sign_up(client)
+        bot = client.post(f"{PREFIX}/bots", headers=headers, json={"name": "B"}).json()
+        run_id = client.post(
+            f"{PREFIX}/runs", headers=headers, json={"bot_id": bot["id"], "input": "hi"}
+        ).json()["run_id"]
+        client.post(f"{PREFIX}/runs/{run_id}/cancel", headers=headers)
+
+        events = client.get(f"{PREFIX}/runs/{run_id}/events", headers=headers).json()
+        assert [e["type"] for e in events] == ["run.cancelled"]
+        assert [e["seq"] for e in events] == [1]
+
+        resumed = client.get(
+            f"{PREFIX}/runs/{run_id}/events", headers=headers, params={"after_seq": 1}
+        ).json()
+        assert resumed == [], "everything after the last seen sequence was already delivered"
+
+    async def test_stream_replays_persisted_events_and_closes(self, client: TestClient) -> None:
+        _, headers = sign_up(client)
+        bot = client.post(f"{PREFIX}/bots", headers=headers, json={"name": "B"}).json()
+        run_id = client.post(
+            f"{PREFIX}/runs", headers=headers, json={"bot_id": bot["id"], "input": "hi"}
+        ).json()["run_id"]
+        client.post(f"{PREFIX}/runs/{run_id}/cancel", headers=headers)
+
+        with client.stream("GET", f"{PREFIX}/runs/{run_id}/stream", headers=headers) as response:
+            assert response.status_code == 200
+            lines = [line for line in response.iter_lines() if line.startswith(("id:", "event:", "data:"))]
+        assert "event: run.cancelled" in lines
+        assert "id: 1" in lines
+
+    async def test_stream_events_are_workspace_scoped(self, client: TestClient) -> None:
+        _, first_headers = sign_up(client, "one@example.com")
+        bot = client.post(f"{PREFIX}/bots", headers=first_headers, json={"name": "B"}).json()
+        run_id = client.post(
+            f"{PREFIX}/runs", headers=first_headers, json={"bot_id": bot["id"], "input": "hi"}
+        ).json()["run_id"]
+
+        _, second_headers = sign_up(client, "two@example.com")
+        assert client.get(f"{PREFIX}/runs/{run_id}/events", headers=second_headers).status_code == 404
+        assert client.get(f"{PREFIX}/runs/{run_id}/stream", headers=second_headers).status_code == 404
+
+
 class TestScopingAndRollback:
     def test_cross_workspace_access_is_404(self, client: TestClient) -> None:
         _, first_headers = sign_up(client, "one@example.com")

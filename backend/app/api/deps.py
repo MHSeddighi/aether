@@ -22,6 +22,7 @@ from app.api.errors import AuthenticationRequired
 from app.application.auth_service import AuthService
 from app.application.bot_service import BotService
 from app.application.conversation_service import ConversationService
+from app.application.event_stream import RunEventStream
 from app.application.knowledge_service import KnowledgeService, LocalBlobStore
 from app.application.model_service import ModelService
 from app.application.run_service import RunService
@@ -222,6 +223,18 @@ def get_model_service(settings: Annotated[Settings, Depends(get_settings)]) -> M
         build_catalog_for,
         default_model_config(settings),
         provider_names=tuple(settings.providers),
+    )
+
+
+def get_event_stream(
+    settings: Annotated[Settings, Depends(get_settings)],
+    runs: Annotated[RunRepository, Depends(get_run_repository)],
+) -> RunEventStream:
+    """Reads the durable event table; the cadence is configuration, not a hard-coded constant."""
+    return RunEventStream(
+        runs,
+        poll_interval=settings.event_poll_interval_seconds,
+        max_seconds=settings.event_stream_max_seconds,
     )
 
 
