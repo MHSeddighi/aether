@@ -15,7 +15,6 @@ from app.domain.conversations import (
     Attachment,
     KnowledgeRetrieval,
     ToolActivity,
-    ToolActivityStatus,
 )
 from app.domain.tools import ToolPermission
 
@@ -88,7 +87,3 @@ class AgentResult(BaseModel):
     @property
     def succeeded(self) -> bool:
         return bool(self.response.strip() or self.bot_proposal or self.tool_proposal)
-
-
-def failed_tool_activity(name: str, detail: str) -> ToolActivity:
-    return ToolActivity(name=name, status=ToolActivityStatus.FAILED, detail=detail)

@@ -133,8 +133,9 @@ observed over `GET /knowledge/{id}/stream`.
 ### Events (application contract, not a framework)
 ```
 run.started        agent.started        agent.step.started    agent.delta
-tool.started       tool.completed       tool.failed          validation.failed
-message.completed  run.completed        run.failed           run.cancelled
+agent.completed    tool.started         tool.completed        tool.failed
+validation.failed  repair.attempted     message.completed     run.completed
+run.failed         run.cancelled
 ```
 Each persisted event: `{seq:int, id, run_id, type, ts, data:dict}`. Token-level `agent.delta` is
 streamed live but **not** persisted; every other event is persisted (Rule 27).

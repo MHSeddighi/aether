@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
 from app.agents.contracts import BotProposal, ToolProposal
@@ -176,7 +177,7 @@ class ProposalGenerator:
         return "\n\n".join(parts)
 
 
-def _as_schema(model: type, payload: dict[str, Any]):
+def _as_schema(model: type[BaseModel], payload: dict[str, Any]):
     """Turn a schema violation into a *classified* failure.
 
     Without this, a pydantic `ValidationError` would escape the bounded repair loop (which only

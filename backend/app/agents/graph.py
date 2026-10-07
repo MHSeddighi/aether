@@ -27,7 +27,7 @@ from app.agents.request import AgentEvent, AgentRequest
 from app.agents.state import STOP_MAX_STEPS, STOP_NO_TOOLS, AgentState
 from app.domain.conversations import ToolActivity, ToolActivityStatus
 from app.domain.deadline import Deadline
-from app.domain.failures import AgentError, FailureKind, FailureReason, SecurityFailure
+from app.domain.failures import AgentError, FailureKind, FailureReason, SecurityFailure, ValidationFailure
 from app.infrastructure.logging_config import get_logger
 from app.infrastructure.models.base import (
     ChatMessage,
@@ -238,9 +238,15 @@ class LangGraphRunner:
                     known_knowledge_ids=tuple(request.knowledge),
                 )
                 proposal = outcome.value
-            payload = (
-                proposal.as_payload if isinstance(proposal, BotProposal) else proposal.model_dump(mode="json")
-            )
+            if isinstance(proposal, BotProposal):
+                payload = proposal.as_payload
+            elif isinstance(proposal, ToolProposal):
+                payload = proposal.model_dump(mode="json")
+            else:  # pragma: no cover - the generator returns exactly one of the two
+                raise ValidationFailure(
+                    FailureReason.OUTPUT_SCHEMA,
+                    "the proposal generator returned an unexpected type",
+                )
             return {"proposal": payload, "repairs": outcome.repairs}
 
         return propose

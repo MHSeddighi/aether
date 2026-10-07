@@ -15,16 +15,12 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import BinaryIO, Protocol
 
 from app.application.ports import KnowledgeStarter
 from app.domain.ids import new_id
 from app.domain.knowledge import KB_DIR, FileBlob, KnowledgeSource, KnowledgeType
-from app.infrastructure.logging_config import get_logger
-
-logger = get_logger(__name__)
 
 MAX_FILE_BYTES = 25 * 1024 * 1024
 CHUNK_SIZE = 8000
@@ -162,13 +158,12 @@ class KnowledgeService:
         # Indexing is durable work owned by Temporal, not the request. Starting it here keeps the
         # HTTP response immediate while guaranteeing the source is eventually indexed (Rule 14).
         if self._starter is not None:
-            from app.infrastructure.temporal.knowledge_starter import knowledge_workflow_id
             from app.workflows.contracts import IndexKnowledgeRequest
 
             for source in sources:
                 await self._starter.start(
                     IndexKnowledgeRequest(source_id=source.source_id, workspace_id=source.workspace_id),
-                    workflow_id=knowledge_workflow_id(source.source_id),
+                    workflow_id=f"kb:{source.source_id}",
                 )
         return sources
 
@@ -237,7 +232,3 @@ def chunk_text(text: str, size: int = CHUNK_SIZE) -> list[str]:
     if current:
         chunks.append(current)
     return chunks
-
-
-def now() -> datetime:
-    return datetime.now(UTC)

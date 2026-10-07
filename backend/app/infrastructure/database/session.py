@@ -63,7 +63,3 @@ class Database:
 
     async def dispose(self) -> None:
         await self._engine.dispose()
-
-
-def build_database(settings: Settings) -> Database:
-    return Database(settings)

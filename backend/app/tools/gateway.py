@@ -36,7 +36,6 @@ from app.domain.failures import (
     SecurityFailure,
     ToolFailure,
 )
-from app.domain.ids import new_id
 from app.domain.tools import Tool, ToolPermission, ToolVersion
 from app.infrastructure.logging_config import get_logger
 from app.tools.base import ToolExecutor, ToolOutcome
@@ -85,7 +84,7 @@ class ToolGateway(ToolExecutor):
         arguments: dict[str, Any],
         deadline: Deadline,
         idempotency_key: str,
-        tool: Tool | None = None,
+        tool: ToolContract | None = None,
     ) -> ToolOutcome:
         replay = self._replay(idempotency_key)
         if replay is not None:
@@ -255,7 +254,3 @@ def build_tool_gateway(settings) -> ToolGateway:
 
     granted = frozenset(P) if settings else DEFAULT_GRANTS
     return ToolGateway(granted_permissions=granted)
-
-
-def new_idempotency_key(run_id: str, call_id: str) -> str:
-    return f"{run_id}:{call_id}" if call_id else f"{run_id}:{new_id('op')}"

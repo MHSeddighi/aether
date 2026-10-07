@@ -1,6 +1,6 @@
 {
   "project": "bot-builder-backend",
-  "updated": "2026-10-07 (session 3: state 8)",
+  "updated": "2026-10-08 (session 4: states 6, 10, 11, 12, 13; states 0-5,7,8,9 verified)",
   "states": [
     {
       "id": 0,
@@ -35,7 +35,7 @@
     {
       "id": 6,
       "name": "validation-and-failure-states",
-      "status": "pending"
+      "status": "passing"
     },
     {
       "id": 7,
@@ -50,27 +50,27 @@
     {
       "id": 9,
       "name": "sse-streaming",
-      "status": "pending"
+      "status": "passing"
     },
     {
       "id": 10,
       "name": "build-workflow-and-sandbox",
-      "status": "pending"
+      "status": "passing"
     },
     {
       "id": 11,
       "name": "evaluation-layer",
-      "status": "pending"
+      "status": "passing"
     },
     {
       "id": 12,
       "name": "end-to-end-testing",
-      "status": "pending"
+      "status": "passing"
     },
     {
       "id": 13,
       "name": "architecture-cleanup",
-      "status": "pending"
+      "status": "passing"
     }
   ],
   "features": [
@@ -165,7 +165,7 @@
         "failure marks Failed with error detail",
         "files are stored outside the database on a data volume"
       ],
-      "notes": "upload/list/rename/delete are implemented and tested; status is advanced by IndexKnowledgeWorkflow (a later state). Bytes live on the data volume, rows in Postgres."
+      "notes": "Upload/list/rename/delete implemented and tested; indexing is now actually started on upload by TemporalKnowledgeStarter (workflow id kb:<source_id>)."
     },
     {
       "id": "temporal-foundation",
@@ -183,7 +183,7 @@
     {
       "id": "run-workflow",
       "description": "RunAgentWorkflow: load immutable bot version -> checkpoint -> execute agent -> validate -> persist result, all via activities",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "deterministic (simple) bot completes without a model call",
         "successful agent run persists an assistant message",
@@ -191,7 +191,7 @@
         "cancellation results in run status cancelled",
         "workflow is deterministic under replay of history"
       ],
-      "notes": "workflow, activities and the deterministic path are implemented and tested (State 3); still pending: the API that starts a run, and run-level end-to-end tests (States 8/12)"
+      "notes": "Implemented and tested: tests/integration/test_workflow.py (13 Temporal time-skipping cases) and tests/integration/test_end_to_end.py (full API -> Temporal -> agent -> Postgres -> SSE)."
     },
     {
       "id": "model-gateway",
@@ -233,7 +233,7 @@
     {
       "id": "output-validation-repair",
       "description": "Pydantic schemas at the AI boundary, bounded self-repair (max 3), explicit failure states",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "valid output accepted",
         "invalid output triggers repair",
@@ -241,7 +241,7 @@
         "repair budget exhausted -> failure_kind validation",
         "business constraint violation rejected"
       ],
-      "notes": "AgentResult/BotProposal validation and step bounds exist (States 5/6 groundwork), but the bounded self-repair loop for structured bot proposals is not implemented yet"
+      "notes": "Implemented: app/agents/repair.py (max 2 repairs) + app/agents/proposal.py (schema then business constraints); covered by tests/unit/test_repair.py."
     },
     {
       "id": "tool-gateway",
@@ -285,66 +285,72 @@
     {
       "id": "sse-streaming",
       "description": "GET /runs/{id}/events history and GET /runs/{id}/stream live SSE with monotonic seq and Last-Event-ID resume",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "events endpoint returns persisted events with seq",
         "stream replays missed events from Last-Event-ID",
         "stream sends heartbeat comments",
         "terminal event closes the stream",
         "event types match the documented contract"
-      ]
+      ],
+      "notes": "Implemented in app/application/event_stream.py + app/api/routes/events.py; replay/resume tested in tests/unit/test_event_stream.py and tests/integration/test_api.py."
     },
     {
       "id": "knowledge-indexing-workflow",
       "description": "IndexKnowledgeWorkflow advances knowledge status with checkpoints and progress",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "status transitions are recorded in order",
         "retry does not double count chunks",
         "cancellation leaves a resumable state"
-      ]
+      ],
+      "notes": "IndexKnowledgeWorkflow + activities implemented; status ordering and failure classification tested in tests/integration/test_index_knowledge.py."
     },
     {
       "id": "build-workflow-sandbox",
       "description": "BuildBotWorkflow with checkpoints (spec -> code -> validate -> docker build -> sandbox test -> publish) and a locked-down Docker sandbox",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "each checkpoint is durable and resumable",
         "generated code runs with no network, cpu/memory/pids limits",
         "build failures are classified and retried per policy",
         "docker socket and secrets are not exposed to the sandbox"
-      ]
+      ],
+      "notes": "BuildBotWorkflow, checkpoint activities and the locked-down Docker sandbox implemented; workflow ordering tested with stubbed activities (tests/integration/test_build_workflow.py) and the policy boundary tested in tests/unit/test_sandbox.py."
     },
     {
       "id": "evaluation-layer",
       "description": "Deterministic output/failure/security evaluators plus regression cases across bot versions",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "output evaluator rejects missing fields",
         "failure evaluator injects model timeout and tool failure",
         "security evaluator blocks prompt injection and unauthorized tool use",
         "regression cases run against two bot versions"
-      ]
+      ],
+      "notes": "Implemented: app/evaluation (Output/Failure/Security/Regression); deterministic checks in tests/unit/test_evaluation.py."
     },
     {
       "id": "end-to-end",
       "description": "End-to-end test of frontend-shaped API -> FastAPI -> Temporal -> agent -> model (fake) -> tool -> Postgres -> SSE",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "chat message produces a streamed assistant reply over SSE",
         "cancellation mid-stream terminates the run",
         "deterministic bot returns an instant reply"
-      ]
+      ],
+      "notes": "tests/integration/test_end_to_end.py runs the real API, real Temporal worker and real Postgres with a deterministic fake model."
     },
     {
       "id": "architecture-cleanup",
       "description": "Final SOLID/clean-code pass: no dead code, no duplicated infrastructure, dependency direction respected",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "no module in app/domain imports infrastructure",
         "lint and typecheck clean",
         "full test suite green"
-      ]
+      ],
+      "notes": "Dead code removed; dependency direction enforced by tests/unit/test_architecture.py (domain pure, application framework-free, routes DB/Temporal-free, adapters satisfy ports)."
     }
   ]
 }

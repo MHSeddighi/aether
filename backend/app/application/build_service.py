@@ -6,8 +6,6 @@ executes anything itself. The workflow and its activities do all the real work.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from app.application.bot_service import BotNotFound, BotService
 from app.application.ports import BuildRepositoryPort, BuildStarter
 from app.domain.failures import ValidationFailure
@@ -83,7 +81,3 @@ class BuildService:
         await self._builds.finish_build(build_id, status="cancelled")
         await self._starter.cancel(build_id)
         return {"build_id": build_id, "status": "cancelled"}
-
-
-def now_utc() -> datetime:
-    return datetime.now(UTC)

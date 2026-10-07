@@ -147,3 +147,93 @@ uv run pytest -q                                   # 276 tests with everything a
 TEMPORAL_TEST_SERVER=1 uv run pytest tests/integration/test_workflow.py
 LIVE_PROVIDER=opencode LIVE_MODEL=space-bunny-free uv run pytest tests/integration/test_model_gateway_live.py
 ```
+
+---
+
+## Session 3 — 2026-10-07 (States 8, 9) — from git history, not previously written up
+
+- **State 8** (`0d17666`): JWT auth (HS256 access/refresh, argon2), application services over the
+  repositories, the full REST surface, workspace scoping, configurable model catalogue.
+- **State 9** (`4347293`): resumable SSE over the durable `run_events` table — `GET /runs/{id}/events`
+  for history and `GET /runs/{id}/stream` (via `sse-starlette`) honouring `Last-Event-ID` and
+  `?after_seq=`; token deltas are live-only.
+
+## Session 4 — 2026-10-08 (States 6, 10, 11, 12, 13; 0-5,7,8,9 verified)
+
+### Current state
+All 14 states are implemented and green. `feature-list.json` reports every state and feature
+`passing`.
+
+| State | Status | Evidence |
+|---|---|---|
+| 0-5, 7 | verified | their existing tests still pass |
+| 6 validation + repair | done | `tests/unit/test_repair.py` |
+| 8 run API + cancellation | verified | `tests/unit/test_services.py`, `tests/integration/test_api.py` |
+| 9 SSE | verified | `tests/unit/test_event_stream.py`, `tests/integration/test_api.py` |
+| 10 build workflow + sandbox + knowledge indexing | done | `tests/integration/test_build_workflow.py` (10), `tests/integration/test_index_knowledge.py` (5), `tests/unit/test_sandbox.py` |
+| 11 evaluation layer | done | `tests/unit/test_evaluation.py` |
+| 12 end-to-end | done | `tests/integration/test_end_to_end.py` (4) |
+| 13 architecture cleanup | done | `tests/unit/test_architecture.py` |
+
+**Full suite with real Postgres (55432) + real Temporal test server: 550 passed, 5 skipped** (skips
+need an opt-in live provider). `uv run ruff check .` and `ruff format --check .` are clean.
+
+### Implemented this session
+- **State 6**: bounded self-repair (`app/agents/repair.py`, max 2) and `ProposalGenerator`
+  (`app/agents/proposal.py`) — schema validation then business constraints, deterministic
+  (temperature 0); the LangGraph `propose` node is selected from the conversation mode.
+- **State 10**: `BuildBotWorkflow` with a durable checkpoint after each expensive/irreversible step;
+  the Docker sandbox (`--network=none`, read-only, cap-drop, pids/memory/cpu limits, hard timeout);
+  build service/repository/routes and the Temporal starters. `IndexKnowledgeWorkflow` is now actually
+  **started on upload** via `TemporalKnowledgeStarter` (stable id `kb:<source_id>`).
+- **State 11**: `app/evaluation` — four focused evaluators (Output, Failure, Security, Regression)
+  over the real agent + Tool Gateway with fakes, plus `FailingModelClient`.
+- **State 12**: a real end-to-end test through API → Temporal → agent → fake model → Postgres → SSE.
+- **State 13**: removed dead code (`now_utc`, `now`, `remove_image`, `new_idempotency_key`,
+  `failed_tool_activity`, `build_database`, `is_deterministic`, the unused `KnowledgeService` infra
+  import) and added `tests/unit/test_architecture.py` to enforce dependency direction.
+
+### Bugs found and fixed (all were invisible to the fake-starter tests)
+1. **`agent.completed` was not in `RunEventType`** — every *real* agent run failed while persisting
+   its completion event. Only the end-to-end test could catch this. (Fixed in `app/domain/runs.py`.)
+2. **Build workflow checkpointed failures against the step `"unknown"`**, which `BuildStep` rejects —
+   the failure path itself was broken.
+3. **Build workflow treated the loaded spec as a model**, but `load_build_spec` returns a dict — the
+   happy path would have raised `AttributeError`.
+4. **Index workflow passed an `AgentError` object into an activity payload** (not JSON-serialisable),
+   so knowledge failures silently never persisted and sources stuck in `Indexing`.
+5. **Index/workflow `_advance` did not accept the `error` argument** its `_fail` path passed.
+6. **Security gap**: the graph executed model tool calls for tools the bot had **not declared** — a
+   prompt-injection escape. Undeclared calls now fail closed with `SecurityFailure(UNAUTHORIZED_TOOL)`
+   (`app/agents/graph.py`).
+7. The previous session's `tests/integration/test_build_workflow.py` did not even import (undefined
+   `workflow_method_shim`); replaced with a real time-skipping test that registers stubs under the
+   production activity names.
+
+### Architecture decisions this session
+- Knowledge indexing is ownership-split like runs/builds: the use case starts the workflow; the
+  workflow only advances status through activities.
+- Sandbox failure classes reuse the taxonomy (`ToolFailure`/`DeadlineExceededFailure`), so a build
+  failure is never a bare `FAILED`.
+- The evaluation layer drives production code rather than re-implementing it; only the model provider
+  is faked.
+
+### Known issues / next task
+- **No static typechecker is configured.** `ruff` + the new architecture test are the gate. Running
+  `mypy` exposes a pre-existing smell: many repository/service methods are named `list`, which shadows
+  the builtin `list` in annotations (e.g. `def list(...) -> list[X]`). Fixing it means renaming those
+  methods to `list_all` across ports, repositories, services, routes and tests. Deliberately deferred:
+  it is a mechanical, cross-cutting rename and should be its own change.
+- The Docker sandbox is unit-tested at the policy boundary; it was `docker run` smoke-tested in
+  session 2 but a real image build is not exercised in CI on this network (Docker Hub IPv6 issue).
+- `langgraph` should still be pinned before release.
+- A frontend data layer (fetch/SSE) remains a separate, explicit later step; `web/` is untouched.
+
+### Useful commands (session 4)
+```bash
+cd backend
+TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/botbuilder_test \
+  TEMPORAL_TEST_SERVER=1 uv run pytest -q          # 550 passed, 5 skipped
+uv run ruff check . && uv run ruff format --check .
+```
+

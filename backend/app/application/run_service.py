@@ -218,9 +218,4 @@ class RunService:
         return value
 
 
-def is_deterministic(version: BotVersion) -> bool:
-    """A version that never reaches the model gateway (Rule 4/36)."""
-    return version.model_spec.provider.value == "deterministic"
-
-
 __all__ = ["BotNotRunnable", "RunNotFound", "RunService", "StartRunCommand"]

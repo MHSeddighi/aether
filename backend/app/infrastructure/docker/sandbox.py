@@ -32,9 +32,6 @@ from app.domain.failures import (
     ToolFailure,
 )
 from app.infrastructure.config import Settings
-from app.infrastructure.logging_config import get_logger
-
-logger = get_logger(__name__)
 
 #: Applied to every `docker run`, in one place so no call site can forget a flag.
 SANDBOX_RUN_FLAGS: tuple[str, ...] = (
@@ -231,13 +228,3 @@ async def _image_metadata(tag: str) -> tuple[str, str, int]:
     digest = parts[0] if parts else ""
     size = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
     return digest, size
-
-
-async def remove_image(tag: str) -> bool:
-    """Best-effort cleanup of a build's image. Never raises: it runs on failure paths."""
-    try:
-        code, _ = await _docker(["image", "rm", "--force", tag], timeout_seconds=60.0, purpose="rm")
-    except Exception:
-        logger.warning("image removal failed", extra={"tag": tag}, exc_info=True)
-        return False
-    return code == 0
