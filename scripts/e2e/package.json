@@ -1,0 +1,12 @@
+{
+  "name": "aether-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Headless-browser end-to-end test for the integrated frontend + backend.",
+  "scripts": {
+    "test": "node run.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.64.0"
+  }
+}

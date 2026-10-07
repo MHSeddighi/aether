@@ -402,7 +402,9 @@ class TestRunService:
         )
         history = starter.started[0][0].history
         assert history[-1] == ("user", "second question")
-        assert ("bot", "first answer") in history
+        # The agent's ConversationTurn only accepts "user"/"assistant"; the message contract's "bot"
+        # must be translated, or the second turn of every conversation fails validation.
+        assert ("assistant", "first answer") in history
         assert ("user", "") not in history
 
     async def test_cancel_persists_the_terminal_state_before_asking_temporal(

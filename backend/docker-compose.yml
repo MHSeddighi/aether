@@ -68,6 +68,8 @@ services:
       TEMPORAL_HOST: temporal:7233
     volumes:
       - ./app:/app/app
+      # Knowledge indexing happens here, so it must see the same blobs the API wrote.
+      - data:/data
     depends_on:
       - temporal
 
@@ -82,6 +84,8 @@ services:
       TEMPORAL_HOST: temporal:7233
     volumes:
       - ./app:/app/app
+      # The Docker build context and artifacts live on the data volume too.
+      - data:/data
     depends_on:
       - temporal
 

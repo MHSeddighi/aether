@@ -622,11 +622,19 @@ console.log(response.text);`;
                       key={bot.id}
                       className="group w-full min-w-0 flex flex-col rounded-lg bg-[var(--md-sys-color-surface-container)] hover:bg-[var(--md-sys-color-surface-container-low)] transition-colors overflow-hidden"
                     >
-                      {/* HEADER — identity + status only */}
-                      <button
-                        type="button"
+                      {/* HEADER — identity + status only. A div, not a button: it contains the
+                          M3Switch (itself a button), and nested buttons are invalid HTML. */}
+                      <div
+                        role="button"
+                        tabIndex={0}
                         onClick={() => goToOverview(bot)}
-                        className="w-full flex items-center gap-2.5 p-3.5 text-start min-w-0"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            goToOverview(bot);
+                          }
+                        }}
+                        className="w-full flex items-center gap-2.5 p-3.5 text-start min-w-0 cursor-pointer"
                       >
                         <span
                           onClick={(e) => {
@@ -656,7 +664,7 @@ console.log(response.text);`;
                             }
                           />
                         </span>
-                      </button>
+                      </div>
 
                       {/* CONTENT — description only */}
                       <div className="px-3.5 pb-3.5 min-w-0">

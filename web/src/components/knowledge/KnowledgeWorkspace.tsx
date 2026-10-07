@@ -13,7 +13,7 @@ import { KnowledgeItem, KnowledgeStatus } from '../../types/agent';
 import { TechLoadingAnimation } from '../ui/TechLoadingAnimation';
 
 export const KnowledgeWorkspace: React.FC = () => {
-  const { knowledge, addKnowledge, t, isRTL } = useWorkspace();
+  const { knowledge, uploadFiles, t, isRTL } = useWorkspace();
   const [search, setSearch] = useState('');
   const [isDragging, setIsDragging] = useState(false);
 
@@ -38,21 +38,8 @@ export const KnowledgeWorkspace: React.FC = () => {
   };
 
   const processFiles = (files: File[]) => {
-    files.forEach((file) => {
-      const ext = file.name.split('.').pop()?.toLowerCase() || 'txt';
-      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-      addKnowledge({
-        name: file.name,
-        nameFa: file.name,
-        type: ext === 'csv' || ext === 'xlsx' ? 'csv' : ext === 'json' ? 'json' : 'pdf',
-        fileCount: 1,
-        chunksCount: Math.floor(Math.random() * 80) + 12,
-        sizeFormatted: `${sizeMb} MB`,
-        status: 'Ready',
-        progressPercent: 100,
-        updatedAt: 'Just now',
-      });
-    });
+    // The backend owns indexing: it returns rows as `Uploading` and advances them durably.
+    uploadFiles(files);
   };
 
   // M3 Assist Chip for Knowledge Status

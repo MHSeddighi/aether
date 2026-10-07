@@ -1,4 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+  ReactNode,
+  useMemo,
+  useCallback,
+} from 'react';
 import {
   BotItem,
   ToolItem,
@@ -6,36 +15,33 @@ import {
   ChatConversation,
   ChatMessage,
   WorkspaceAccount,
-  BotProposal,
+  RunEvent,
 } from '../types/agent';
-import {
-  mockBots,
-  mockTools,
-  mockKnowledge,
-  mockConversations,
-  mockAccount,
-} from '../data/mockData';
 import { SupportedLocale, translations, Translations } from '../lib/i18n/translations';
 import {
-  THEME_PRESETS,
   generateMaterial3ThemeTokens,
   applyThemeTokensToDocument,
   ThemeMode,
 } from '../lib/theme/themeEngine';
-import { readStorage, writeStorage, removeStorage, STORAGE_KEYS } from '../lib/storage';
+import { readStorage, writeStorage, STORAGE_KEYS } from '../lib/storage';
 import { readRoute, writeRoute } from '../lib/router';
+import {
+  ApiError,
+  authApi,
+  botsApi,
+  BotWrite,
+  conversationsApi,
+  knowledgeApi,
+  runsApi,
+  toolsApi,
+  ToolWrite,
+  tokens,
+} from '../lib/api';
+import { subscribeToRun, RunStream } from '../lib/sse';
 
 export type MainSection = 'chat' | 'bots' | 'tools' | 'knowledge' | 'settings';
 export type StudioTab = 'playground' | 'overview' | 'billing' | 'code';
 
-/**
- * One-shot signal used by the Bots playground to decide whether it should jump
- * straight into the studio. It is intentionally a separate piece of state from
- * `editingBot`, because `editingBot` merely means "this bot is the active
- * context" and is mutated by saves, toggles and emoji edits. Deriving
- * navigation from it used to force the studio view on every single entry into
- * the section.
- */
 export interface StudioOpenRequest {
   botId: string;
   tab: StudioTab;
@@ -48,13 +54,14 @@ interface WorkspaceContextType {
   // Navigation
   currentSection: MainSection;
   setCurrentSection: (section: MainSection) => void;
-  /** Pushes a route (including bot detail views) onto the URL bar. */
   navigate: (route: { section: MainSection | 'auth'; botId?: string; botView?: 'overview' | 'studio' }) => void;
 
   // Auth
   isAuthenticated: boolean;
+  isBooting: boolean;
   session: { name: string; email: string } | null;
-  signIn: (email: string, name?: string) => void;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, name: string, password: string) => Promise<void>;
   signOut: () => void;
   isSidebarCollapsed: boolean;
   setIsSidebarCollapsed: (collapsed: boolean) => void;
@@ -85,8 +92,8 @@ interface WorkspaceContextType {
   startBotGenerationChat: () => void;
   editingBotInChat: BotItem | null;
   setEditingBotInChat: (bot: BotItem | null) => void;
-  confirmAndDeployBot: (proposed: Partial<BotItem>) => BotItem;
-  saveToolToWorkspace: (proposed: Partial<ToolItem>) => ToolItem;
+  confirmAndDeployBot: (proposed: Partial<BotItem>) => Promise<BotItem>;
+  saveToolToWorkspace: (proposed: Partial<ToolItem>) => Promise<ToolItem>;
 
   // Chat conversations
   conversations: ChatConversation[];
@@ -102,7 +109,7 @@ interface WorkspaceContextType {
   regenerateLastMessage: () => void;
   setMessageFeedback: (messageId: string, feedback: 'good' | 'bad') => void;
 
-  // Bots & Studio Workspace (Google AI Studio model)
+  // Bots & Studio Workspace
   bots: BotItem[];
   selectedBotId: string;
   setSelectedBotId: (id: string) => void;
@@ -110,8 +117,7 @@ interface WorkspaceContextType {
   editingBot: BotItem | null;
   setEditingBot: (bot: BotItem | null) => void;
   openBotInStudio: (bot: BotItem, tab?: StudioTab) => void;
-  createAndOpenSimpleBot: (promptText?: string) => BotItem;
-  /** Set only when something outside the Bots playground asks to open a bot. */
+  createAndOpenSimpleBot: (promptText?: string) => Promise<BotItem>;
   studioOpenRequest: StudioOpenRequest | null;
   clearStudioOpenRequest: () => void;
   saveBot: (bot: BotItem) => void;
@@ -135,7 +141,6 @@ interface WorkspaceContextType {
   // Knowledge
   knowledge: KnowledgeItem[];
   uploadFiles: (files: File[]) => void;
-  addKnowledge: (item: Partial<KnowledgeItem>) => void;
 
   // Account
   account: WorkspaceAccount;
@@ -146,10 +151,92 @@ interface WorkspaceContextType {
   setIsCommandPaletteOpen: (open: boolean) => void;
 }
 
+const EMPTY_ACCOUNT: WorkspaceAccount = {
+  id: '',
+  name: '',
+  plan: '',
+  runsUsed: 0,
+  runsLimit: 0,
+  tokensUsedMillion: 0,
+  tokensLimitMillion: 0,
+};
+
+const FALLBACK_BOT: BotItem = {
+  id: '',
+  name: 'Assistant',
+  description: '',
+  avatarIcon: 'Bot',
+  avatarBg: 'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)]',
+  model: '',
+  instructions: '',
+  toolIds: [],
+  knowledgeIds: [],
+  temperature: 0.2,
+  status: 'draft',
+  enabled: false,
+  version: '0.0.0',
+  versions: [],
+  metrics: { totalRuns: 0, avgLatencyMs: 0, tokensConsumed: 0, successRatePercent: 0 },
+  lastUsed: 'Never',
+};
+
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
+function botToWrite(bot: BotItem): BotWrite {
+  return {
+    name: bot.name,
+    name_fa: bot.nameFa,
+    description: bot.description,
+    description_fa: bot.descriptionFa,
+    avatar_icon: bot.avatarIcon,
+    avatar_bg: bot.avatarBg,
+    bot_type: bot.botType ?? 'agent',
+    provider: bot.provider,
+    model_id: bot.modelId,
+    instructions: bot.instructions,
+    instructions_fa: bot.instructionsFa,
+    tool_ids: bot.toolIds,
+    knowledge_ids: bot.knowledgeIds,
+    deterministic_rules: bot.deterministicRules ?? [],
+    temperature: bot.temperature,
+    top_p: bot.topP,
+    max_output_tokens: bot.maxOutputTokens,
+    status: bot.status,
+    enabled: bot.enabled,
+  };
+}
+
+function toolToWrite(tool: Partial<ToolItem>): ToolWrite {
+  const config = (tool.config ?? {}) as Record<string, unknown>;
+  return {
+    name: tool.name || 'Custom Tool',
+    name_fa: tool.nameFa,
+    purpose: tool.purpose || 'Custom external capability',
+    purpose_fa: tool.purposeFa,
+    icon: tool.icon || 'Link',
+    connection_state: tool.connectionState || 'Connected',
+    category: tool.category || 'api',
+    enabled: tool.enabled ?? true,
+    config,
+    input_schema: (config.inputSchema as Record<string, unknown>) ?? {
+      type: 'object',
+      properties: {},
+    },
+    output_schema: (config.outputSchema as Record<string, unknown>) ?? { type: 'object' },
+    handler: (config.handler as 'builtin' | 'http' | 'docker') ?? 'builtin',
+    handler_config: (config.handlerConfig as Record<string, unknown>) ?? {},
+    timeout_seconds: (config.timeoutSeconds as number) ?? 20,
+    permissions: (config.permissions as string[]) ?? [],
+  };
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof Error) return error.message;
+  return 'Something went wrong';
+}
+
 export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Navigation. Seeded from the URL so a reload lands where the user was.
   const [currentSection, setCurrentSection] = useState<MainSection>(() => {
     const initial = readRoute();
     return initial.section === 'auth' ? 'chat' : initial.section;
@@ -159,10 +246,10 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
   );
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
-  // Auth (local only — there is no backend in this build)
-  const [session, setSession] = useState<{ name: string; email: string } | null>(() =>
-    readStorage(STORAGE_KEYS.session, null)
-  );
+  // Auth (server-owned session; only the tokens are persisted locally)
+  const [session, setSession] = useState<{ name: string; email: string } | null>(null);
+  const [account, setAccount] = useState<WorkspaceAccount>(EMPTY_ACCOUNT);
+  const [isBooting, setIsBooting] = useState(true);
   const isAuthenticated = session !== null;
 
   // i18n
@@ -192,28 +279,199 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [activeStudioTab, setActiveStudioTab] = useState<StudioTab>('playground');
   const [isAgentEditing, setIsAgentEditing] = useState(false);
 
-  // Domain State (persisted)
-  const [bots, setBots] = useState<BotItem[]>(() => readStorage(STORAGE_KEYS.bots, mockBots));
+  // Domain state (server-owned)
+  const [bots, setBots] = useState<BotItem[]>([]);
   const [selectedBotId, setSelectedBotId] = useState<string>(() =>
-    readStorage(STORAGE_KEYS.selectedBotId, mockBots[0].id)
+    readStorage(STORAGE_KEYS.selectedBotId, '')
   );
-  // Active bot context. Starts empty: entering the Bots section must land on the
-  // catalog, not on whichever bot was touched last.
   const [editingBot, setEditingBot] = useState<BotItem | null>(null);
   const [studioOpenRequest, setStudioOpenRequest] = useState<StudioOpenRequest | null>(null);
-  const [tools, setTools] = useState<ToolItem[]>(() => readStorage(STORAGE_KEYS.tools, mockTools));
-  const [knowledge, setKnowledge] = useState<KnowledgeItem[]>(() =>
-    readStorage(STORAGE_KEYS.knowledge, mockKnowledge)
-  );
-  const [conversations, setConversations] = useState<ChatConversation[]>(() =>
-    readStorage(STORAGE_KEYS.conversations, mockConversations)
-  );
+  const [tools, setTools] = useState<ToolItem[]>([]);
+  const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [account] = useState<WorkspaceAccount>(mockAccount);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
-  // Keep the URL in sync with the active section
+  const [botSimulationMessages, setBotSimulationMessages] = useState<ChatMessage[]>([]);
+  const [agentEditMessages, setAgentEditMessages] = useState<ChatMessage[]>([
+    {
+      id: 'agent-edit-init',
+      sender: 'bot',
+      content:
+        'I am your Bot Architecture Agent. Tell me how you would like to refine this bot (e.g. adjust tone, inject safety rules, connect new tools, or lower temperature).',
+      timestamp: 'Ready',
+    },
+  ]);
+
+  // Latest-value refs so async callbacks never read stale state.
+  const selectedBotIdRef = useRef(selectedBotId);
+  const activeConversationIdRef = useRef(activeConversationId);
+  const agentModeRef = useRef(agentMode);
+  const editingBotRef = useRef(editingBot);
+  selectedBotIdRef.current = selectedBotId;
+  activeConversationIdRef.current = activeConversationId;
+  agentModeRef.current = agentMode;
+  editingBotRef.current = editingBot;
+
+  const activeRunRef = useRef<{ runId: string; conversationId: string; assistantId: string; stream: RunStream } | null>(null);
+  const simulationStreamRef = useRef<RunStream | null>(null);
+  const knowledgePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bootedRef = useRef(false);
+
+  const selectedBot = useMemo(
+    () => bots.find((b) => b.id === selectedBotId) || bots[0] || FALLBACK_BOT,
+    [bots, selectedBotId]
+  );
+
+  const activeConversation = useMemo(() => {
+    if (!activeConversationId) return null;
+    return conversations.find((c) => c.id === activeConversationId) || null;
+  }, [conversations, activeConversationId]);
+
+  const patchMessage = useCallback(
+    (conversationId: string, messageId: string, patch: (m: ChatMessage) => ChatMessage) => {
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId
+            ? { ...c, messages: c.messages.map((m) => (m.id === messageId ? patch(m) : m)) }
+            : c
+        )
+      );
+    },
+    []
+  );
+
+  // --- data loading -------------------------------------------------------
+
+  const startKnowledgePolling = useCallback(() => {
+    if (knowledgePollRef.current) return;
+    knowledgePollRef.current = setInterval(() => {
+      void knowledgeApi
+        .list()
+        .then((items) => {
+          setKnowledge(items);
+          const pending = items.some(
+            (item) => item.status === 'Uploading' || item.status === 'Processing' || item.status === 'Indexing'
+          );
+          if (!pending && knowledgePollRef.current) {
+            clearInterval(knowledgePollRef.current);
+            knowledgePollRef.current = null;
+          }
+        })
+        .catch(() => {
+          if (knowledgePollRef.current) {
+            clearInterval(knowledgePollRef.current);
+            knowledgePollRef.current = null;
+          }
+        });
+    }, 1500);
+  }, []);
+
+  const loadWorkspace = useCallback(async () => {
+    const [loadedBots, loadedTools, loadedKnowledge, loadedConversations] = await Promise.all([
+      botsApi.list(),
+      toolsApi.list(),
+      knowledgeApi.list(),
+      conversationsApi.list(),
+    ]);
+    setTools(loadedTools);
+    setKnowledge(loadedKnowledge);
+    startKnowledgePolling();
+    setConversations(loadedConversations.map((c) => ({ ...c, messages: c.messages ?? [] })));
+
+    let nextBots = loadedBots;
+    if (nextBots.length === 0) {
+      // A brand-new workspace still needs a bot to chat with; seed one default agent.
+      try {
+        const seeded = await botsApi.create({
+          name: 'Assistant',
+          description: 'A general-purpose assistant.',
+          bot_type: 'agent',
+          instructions: 'You are a helpful, concise assistant.',
+        });
+        nextBots = [seeded];
+      } catch {
+        nextBots = [];
+      }
+    }
+    setBots(nextBots);
+    setSelectedBotId((prev) => (nextBots.some((b) => b.id === prev) ? prev : nextBots[0]?.id ?? ''));
+  }, [startKnowledgePolling]);
+
+  const applyAuth = useCallback(
+    (user: { name: string; email: string }, workspace: WorkspaceAccount) => {
+      setSession({ name: user.name, email: user.email });
+      setAccount(workspace);
+    },
+    []
+  );
+
+  // Boot: validate a stored token once, then load the workspace.
+  useEffect(() => {
+    if (bootedRef.current) return;
+    bootedRef.current = true;
+    void (async () => {
+      if (!tokens.access) {
+        setIsBooting(false);
+        return;
+      }
+      try {
+        const me = await authApi.me();
+        applyAuth(me.user, me.workspace);
+        await loadWorkspace();
+      } catch {
+        tokens.clear();
+      } finally {
+        setIsBooting(false);
+      }
+    })();
+  }, [applyAuth, loadWorkspace]);
+
+  // Clean up any live streams/polls on unmount.
+  useEffect(
+    () => () => {
+      activeRunRef.current?.stream.close();
+      simulationStreamRef.current?.close();
+      if (knowledgePollRef.current) clearInterval(knowledgePollRef.current);
+    },
+    []
+  );
+
+  // --- auth ---------------------------------------------------------------
+
+  const signIn = async (email: string, password: string) => {
+    const result = await authApi.login({ email: email.trim(), password });
+    applyAuth(result.user, result.workspace);
+    await loadWorkspace();
+    setCurrentSection('chat');
+    writeRoute({ section: 'chat' });
+  };
+
+  const signUp = async (email: string, name: string, password: string) => {
+    const result = await authApi.register({ email: email.trim(), name: name.trim(), password });
+    applyAuth(result.user, result.workspace);
+    await loadWorkspace();
+    setCurrentSection('chat');
+    writeRoute({ section: 'chat' });
+  };
+
+  const signOut = () => {
+    void authApi.logout().catch(() => undefined);
+    setSession(null);
+    setAccount(EMPTY_ACCOUNT);
+    setBots([]);
+    setTools([]);
+    setKnowledge([]);
+    setConversations([]);
+    setActiveConversationId(null);
+    setEditingBot(null);
+    setBotSimulationMessages([]);
+    writeRoute({ section: 'auth' });
+  };
+
+  // --- navigation ---
+
   useEffect(() => {
     const route = readRoute();
     if (route.section === currentSection && route.section !== 'bots') return;
@@ -221,12 +479,10 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
     writeRoute({ section: currentSection });
   }, [currentSection]);
 
-  // Signed-out visitors live on /login
   useEffect(() => {
     if (!isAuthenticated) writeRoute({ section: 'auth' });
   }, [isAuthenticated]);
 
-  // Back/forward navigation
   useEffect(() => {
     const onHashChange = () => {
       const route = readRoute();
@@ -237,745 +493,23 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  // Persist settings and workspace data
+  // Persist presentation settings only.
   useEffect(() => writeStorage(STORAGE_KEYS.themeMode, themeMode), [themeMode]);
   useEffect(() => writeStorage(STORAGE_KEYS.themePresetId, themePresetId), [themePresetId]);
   useEffect(() => writeStorage(STORAGE_KEYS.customPrimaryColor, customPrimaryColor), [customPrimaryColor]);
   useEffect(() => writeStorage(STORAGE_KEYS.locale, locale), [locale]);
   useEffect(() => writeStorage(STORAGE_KEYS.sidebarCollapsed, isSidebarCollapsed), [isSidebarCollapsed]);
-  useEffect(() => writeStorage(STORAGE_KEYS.bots, bots), [bots]);
-  useEffect(() => writeStorage(STORAGE_KEYS.tools, tools), [tools]);
-  useEffect(() => writeStorage(STORAGE_KEYS.knowledge, knowledge), [knowledge]);
-  useEffect(() => writeStorage(STORAGE_KEYS.conversations, conversations), [conversations]);
   useEffect(() => writeStorage(STORAGE_KEYS.selectedBotId, selectedBotId), [selectedBotId]);
-
-  // Bot Interactive Simulation messages in Studio
-  const [botSimulationMessages, setBotSimulationMessages] = useState<ChatMessage[]>([
-    {
-      id: `sim-intro-${mockBots[0].id}`,
-      sender: 'bot',
-      content: `Hello! I am ${mockBots[0].name} running on ${mockBots[0].model}. Ask me anything to test my responses.`,
-      timestamp: 'Ready',
-    },
-  ]);
-
-  // Agent Bot Editing Chat in Studio
-  const [agentEditMessages, setAgentEditMessages] = useState<ChatMessage[]>([
-    {
-      id: 'agent-edit-init',
-      sender: 'bot',
-      content: 'I am your Bot Architecture Agent. Tell me how you would like to refine this bot (e.g. adjust tone, inject safety rules, connect new tools, or lower temperature).',
-      timestamp: 'Ready',
-    },
-  ]);
 
   // Apply M3 Theme Tokens
   useEffect(() => {
-    const primaryHex = customPrimaryColor;
     const isDark =
       themeMode === 'dark' ||
-      (themeMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-    const tokens = generateMaterial3ThemeTokens(primaryHex, isDark);
-    applyThemeTokensToDocument(tokens, isDark);
+      (themeMode === 'system' &&
+        typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches);
+    applyThemeTokensToDocument(generateMaterial3ThemeTokens(customPrimaryColor, isDark), isDark);
   }, [themePresetId, customPrimaryColor, themeMode]);
-
-  const selectedBot = useMemo(() => {
-    return bots.find((b) => b.id === selectedBotId) || bots[0];
-  }, [bots, selectedBotId]);
-
-  const activeConversation = useMemo(() => {
-    if (!activeConversationId) return null;
-    return conversations.find((c) => c.id === activeConversationId) || null;
-  }, [conversations, activeConversationId]);
-
-  // Start New Chat (Home)
-  const startNewChat = (botId?: string) => {
-    setActiveConversationId(null);
-    setChatMode('chat');
-    setEditingBotInChat(null);
-    if (botId) setSelectedBotId(botId);
-    setCurrentSection('chat');
-    setIsMobileDrawerOpen(false);
-  };
-
-  // Start Bot Generation with Agent
-  const startBotGenerationChat = () => {
-    setActiveConversationId(null);
-    setChatMode('bot-generation');
-    setEditingBotInChat(null);
-    setCurrentSection('chat');
-    setIsMobileDrawerOpen(false);
-  };
-
-  const selectConversation = (id: string) => {
-    setActiveConversationId(id);
-    const found = conversations.find((c) => c.id === id);
-    if (found) {
-      setSelectedBotId(found.botId);
-      if (found.mode === 'simple-bot') {
-        setAgentMode('simple-bot');
-        setChatMode('bot-generation');
-      } else {
-        setAgentMode('agent-bot');
-        setChatMode('chat');
-      }
-    }
-    setCurrentSection('chat');
-    setIsMobileDrawerOpen(false);
-  };
-
-  const deleteConversation = (id: string) => {
-    setConversations((prev) => prev.filter((c) => c.id !== id));
-    if (activeConversationId === id) {
-      setActiveConversationId(null);
-    }
-  };
-
-  const renameConversation = (id: string, newTitle: string) => {
-    setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, title: newTitle } : c))
-    );
-  };
-
-  // Seed the phone preview with a fresh greeting for the given bot
-  const resetBotSimulation = (bot: BotItem) => {
-    setBotSimulationMessages([
-      {
-        id: `sim-intro-${bot.id}`,
-        sender: 'bot',
-        content: `Hello! I am ${isRTL ? bot.nameFa || bot.name : bot.name} running on ${bot.model}. Ask me anything to test my responses.`,
-        timestamp: 'Ready',
-      },
-    ]);
-  };
-
-  // Open a bot in Google AI Studio
-  const openBotInStudio = (bot: BotItem, tab: StudioTab = 'playground') => {
-    setEditingBot(bot);
-    setSelectedBotId(bot.id);
-    setActiveStudioTab(tab);
-    setCurrentSection('bots');
-    setStudioOpenRequest({ botId: bot.id, tab, nonce: Date.now() });
-    resetBotSimulation(bot);
-  };
-
-  // Create a new Simple Deterministic Bot and directly navigate to its studio playground
-  const createAndOpenSimpleBot = (promptText?: string): BotItem => {
-    const botId = `bot-simple-${Date.now()}`;
-    const cleanPrompt = promptText?.trim() || '';
-    const firstWord = cleanPrompt.split(' ')[0]?.toLowerCase() || 'ping';
-    const botName = cleanPrompt.length > 0
-      ? (cleanPrompt.length > 24 ? `${cleanPrompt.slice(0, 24).trim()}...` : cleanPrompt)
-      : `Static Rule Bot #${bots.length + 1}`;
-
-    const rules = [
-      { trigger: firstWord, response: `Instant deterministic match for "${cleanPrompt || firstWord}". Latency 0ms.` },
-      { trigger: 'ping', response: 'pong! (Instant deterministic execution)' },
-      { trigger: 'help', response: 'Available commands: ping, status, help, pricing' },
-      { trigger: 'status', response: 'All systems operational. Zero model dependencies.' },
-    ];
-
-    const newBot: BotItem = {
-      id: botId,
-      name: botName,
-      nameFa: botName,
-      botType: 'simple',
-      description: cleanPrompt || 'Deterministic rule-based bot operating without any LLM models.',
-      descriptionFa: cleanPrompt || 'بات قطعی مبتنی بر قانون بدون نیاز به مدل‌های زبانی.',
-      avatarIcon: '⚡',
-      avatarBg: 'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)]',
-      model: 'Deterministic (No Model)',
-      instructions: 'Deterministic condition-action rules without models, tools, or knowledge.',
-      deterministicRules: rules,
-      toolIds: [],
-      knowledgeIds: [],
-      temperature: 0,
-      topP: 1,
-      maxOutputTokens: 256,
-      status: 'active',
-      enabled: true,
-      version: '1.0.0',
-      versions: [
-        { version: '1.0.0', updatedAt: 'Just now', notes: 'Initial deterministic creation', model: 'Deterministic', temperature: 0 },
-      ],
-      metrics: {
-        totalRuns: 1,
-        avgLatencyMs: 1,
-        tokensConsumed: 0,
-        successRatePercent: 100,
-      },
-      lastUsed: 'Just now',
-    };
-
-    setBots((prev) => [newBot, ...prev]);
-    setEditingBot(newBot);
-    setSelectedBotId(newBot.id);
-    setActiveStudioTab('playground');
-    setCurrentSection('bots');
-    setStudioOpenRequest({ botId: newBot.id, tab: 'playground', nonce: Date.now() });
-
-    // Add session to conversation history so it appears in sidebar
-    const newConv: ChatConversation = {
-      id: `conv-gen-${Date.now()}`,
-      title: `Simple Bot: ${newBot.name}`,
-      botId: newBot.id,
-      category: 'today',
-      updatedAt: 'Just now',
-      mode: 'simple-bot',
-      messages: [
-        {
-          id: `msg-create-${Date.now()}`,
-          sender: 'bot',
-          content: `⚡ Simple Deterministic Bot "${newBot.name}" created with 0ms latency rules. Ready in Studio Playground.`,
-          timestamp: 'Just now',
-        },
-      ],
-    };
-    setConversations((prev) => [newConv, ...prev]);
-    setActiveConversationId(newConv.id);
-
-    return newBot;
-  };
-
-  // Toggle Bot Active/Disabled state
-  const toggleBotEnabled = (botId: string) => {
-    setBots((prev) =>
-      prev.map((b) => (b.id === botId ? { ...b, enabled: !b.enabled } : b))
-    );
-    if (editingBot && editingBot.id === botId) {
-      setEditingBot((prev) => (prev ? { ...prev, enabled: !prev.enabled } : null));
-    }
-  };
-
-  // Confirm and Deploy a Bot generated via conversation
-  const confirmAndDeployBot = (proposed: Partial<BotItem>): BotItem => {
-    const id = `bot-${Date.now()}`;
-    const name = proposed.name || 'Custom AI Agent';
-    const newBot: BotItem = {
-      id,
-      name,
-      nameFa: proposed.nameFa || name,
-      description: proposed.description || 'Custom generated agent built with Agent conversation.',
-      descriptionFa: proposed.descriptionFa || 'ایجنت سفارشی تولیدشده از طریق گفتگوی هوشمند.',
-      avatarIcon: proposed.avatarIcon || 'Bot',
-      avatarBg: 'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)]',
-      model: proposed.model || 'Gemini 2.5 Flash',
-      instructions: proposed.instructions || 'You are an intelligent, grounded AI agent.',
-      instructionsFa: proposed.instructionsFa || 'شما یک دستیار هوشمند و دقیق هستید.',
-      toolIds: proposed.toolIds || ['tool-web-search'],
-      knowledgeIds: proposed.knowledgeIds || [],
-      temperature: proposed.temperature ?? 0.2,
-      topP: proposed.topP ?? 0.95,
-      maxOutputTokens: proposed.maxOutputTokens ?? 2048,
-      status: 'active',
-      enabled: true,
-      version: '1.0.0',
-      versions: [
-        {
-          version: '1.0.0',
-          updatedAt: 'Just now',
-          notes: 'Synthesized and deployed via Agent conversation',
-          model: proposed.model || 'Gemini 2.5 Flash',
-          temperature: proposed.temperature ?? 0.2,
-        },
-      ],
-      metrics: {
-        totalRuns: 0,
-        avgLatencyMs: 310,
-        tokensConsumed: 0,
-        successRatePercent: 100,
-      },
-      billingUsage: {
-        monthlyEstimatedCost: 2.40,
-        inputTokens: 120000,
-        outputTokens: 64000,
-        cachedTokens: 18000,
-        costPerThousandRequests: 0.038,
-        rpmQuota: 1500,
-        tpmQuota: 2000000,
-        monthlyBudgetCap: 50.0,
-      },
-      lastUsed: 'Just now',
-      ...proposed,
-    };
-
-    setBots((prev) => [newBot, ...prev]);
-    openBotInStudio(newBot, 'playground');
-    return newBot;
-  };
-
-  // Save and register a Tool generated via conversation
-  const saveToolToWorkspace = (proposed: Partial<ToolItem>): ToolItem => {
-    const id = `tool-${Date.now()}`;
-    const name = proposed.name || 'Custom API Connector';
-    const newT: ToolItem = {
-      id,
-      name,
-      nameFa: proposed.nameFa || name,
-      purpose: proposed.purpose || 'Custom external capability created via agent conversation.',
-      purposeFa: proposed.purposeFa || 'ابزار اختصاصی تعریف‌شده از طریق گفتگوی ایجنت.',
-      icon: proposed.icon || 'Terminal',
-      connectionState: 'Connected',
-      category: proposed.category || 'api',
-      enabled: true,
-      ...proposed,
-    };
-    setTools((prev) => [newT, ...prev]);
-    setCurrentSection('tools');
-    return newT;
-  };
-
-  // Send message in Chat Workspace
-  const sendMessage = (
-    content: string,
-    attachments?: { name: string; sizeFormatted: string; type: string }[]
-  ) => {
-    if (!content.trim() && (!attachments || attachments.length === 0)) return;
-
-    const userMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      sender: 'user',
-      content,
-      timestamp: 'Just now',
-      attachments,
-    };
-
-    let targetConvId = activeConversationId;
-    let updatedConversations = [...conversations];
-
-    // If on New Chat, create conversation first
-    if (!targetConvId) {
-      targetConvId = `chat-${Date.now()}`;
-      const title = content.slice(0, 36) || (chatMode === 'bot-generation' ? 'Bot Generation' : 'New Conversation');
-      const newConv: ChatConversation = {
-        id: targetConvId,
-        title,
-        botId: selectedBotId,
-        category: 'today',
-        updatedAt: 'Just now',
-        messages: [userMsg],
-        mode: agentMode,
-      };
-      updatedConversations = [newConv, ...conversations];
-      setConversations(updatedConversations);
-      setActiveConversationId(targetConvId);
-    } else {
-      updatedConversations = updatedConversations.map((c) =>
-        c.id === targetConvId
-          ? {
-              ...c,
-              updatedAt: 'Just now',
-              messages: [...c.messages, userMsg],
-            }
-          : c
-      );
-      setConversations(updatedConversations);
-    }
-
-    setIsStreaming(true);
-
-    const botMsgId = `bot-${Date.now()}`;
-    const isBotGenerationQuery =
-      chatMode === 'bot-generation' ||
-      /bot|agent|سازنده|ایجنت|ساخت|generate|create|build/i.test(content);
-
-    // Initial placeholder message for streaming
-    setTimeout(() => {
-      setConversations((prev) =>
-        prev.map((c) => {
-          if (c.id !== targetConvId) return c;
-          return {
-            ...c,
-            messages: [
-              ...c.messages,
-              {
-                id: botMsgId,
-                sender: 'bot',
-                content: '',
-                timestamp: 'Just now',
-                isStreaming: true,
-                knowledgeRetrieval: selectedBot.knowledgeIds.length > 0
-                  ? {
-                      count: selectedBot.knowledgeIds.length,
-                      sources: knowledge
-                        .filter((k) => selectedBot.knowledgeIds.includes(k.id))
-                        .map((k) => (isRTL ? k.nameFa || k.name : k.name)),
-                    }
-                  : undefined,
-              },
-            ],
-          };
-        })
-      );
-    }, 400);
-
-    // Stream response completion
-    setTimeout(() => {
-      if (agentMode === 'simple-bot' || /simple|deterministic|قطعی|قانون/i.test(content)) {
-        // Synthesize a Deterministic Simple Bot Proposal (No LLM, no tools, no knowledge)
-        const inferredName = content.length > 8 ? content.slice(0, 24).replace(/[^\w\s\u0600-\u06FF]/gi, '').trim() + ' Simple Bot' : 'Keyword Responder';
-        const proposedBot: Partial<BotItem> = {
-          name: inferredName,
-          nameFa: inferredName,
-          botType: 'simple',
-          description: `Deterministic rule-based bot: "${content.slice(0, 60)}..."`,
-          descriptionFa: `بات قطعی و قانون‌محور بدون نیاز به مدل‌های زبانی.`,
-          avatarIcon: '⚡',
-          avatarBg: 'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)]',
-          model: 'Deterministic (No Model)',
-          instructions: `Deterministic workflow for: ${content}.\nProcesses direct triggers without LLMs, external tools, or knowledge.`,
-          instructionsFa: `گردش‌کار قطعی و سریع برای کلمات کلیدی، بدون نیاز به مدل زبانی یا ابزار خارجی.`,
-          deterministicRules: [
-            { trigger: 'ping', response: 'pong! (Instant deterministic execution)' },
-            { trigger: 'hello', response: `Hello! I am ${inferredName}, running deterministically.` },
-            { trigger: 'status', response: 'System status: OK. 0ms latency.' },
-          ],
-          toolIds: [],
-          knowledgeIds: [],
-          temperature: 0,
-          topP: 1,
-          maxOutputTokens: 256,
-        };
-
-        const codeSnippet = `# Deterministic Python Rule Matcher (No LLM or API call needed)
-def handle_message(text: str) -> str:
-    rules = {
-        "ping": "pong!",
-        "hello": "Hello! Deterministic instant response.",
-        "status": "Operational (0ms latency)"
-    }
-    for trigger, reply in rules.items():
-        if trigger in text.lower():
-            return reply
-    return "Default deterministic fallback response."
-`;
-
-        const proposalContentEn = `I have architected a **Simple Deterministic Bot** blueprint for **${inferredName}**.\n\n- **Bot Type**: Simple Bot (Deterministic & Rule-Based)\n- **Model**: None (Executes with zero token cost and near 0ms latency)\n- **Capabilities**: Pure condition-action triggers without external tools or knowledge\n\nYou can review this deterministic bot below and deploy it to Studio.`;
-        const proposalContentFa = `طرح معماری **بات ساده و قطعی** برای **${inferredName}** آماده شد:\n\n- **نوع بات**: بات ساده و قانون‌محور (بدون وابستگی به مدل زبانی)\n- **هزینه و تاخیر**: بدون مصرف توکن با اجرای بلادرنگ (زیر چند میلی‌ثانیه)\n- **ابزارها و دانش**: صفر (کاملاً مستقل و سبک)\n\nمی‌توانید پیش‌نمایش را بررسی کرده و در استودیو باز کنید.`;
-
-        setConversations((prev) =>
-          prev.map((c) => {
-            if (c.id !== targetConvId) return c;
-            return {
-              ...c,
-              messages: c.messages.map((m) =>
-                m.id === botMsgId
-                  ? {
-                      ...m,
-                      content: isRTL ? proposalContentFa : proposalContentEn,
-                      isStreaming: false,
-                      botProposal: {
-                        proposedBot,
-                        codeSnippet,
-                      },
-                    }
-                  : m
-              ),
-            };
-          })
-        );
-      } else if (isBotGenerationQuery || agentMode === 'agent-bot') {
-        // Synthesize an actionable Agent Bot Proposal (with LLM, tools, knowledge, RAG)!
-        const inferredName = content.length > 10 ? content.slice(0, 24).replace(/[^\w\s\u0600-\u06FF]/gi, '').trim() + ' Agent' : 'Smart Assistant';
-        const proposedBot: Partial<BotItem> = {
-          name: inferredName,
-          nameFa: inferredName,
-          botType: 'agent',
-          avatarIcon: '🤖',
-          avatarBg: 'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)]',
-          description: `Custom agent synthesized from user specifications: "${content.slice(0, 50)}..."`,
-          descriptionFa: `ایجنت هوشمند طراحی‌شده بر اساس مشخصات کاربر با مدل زبانی.`,
-          model: content.toLowerCase().includes('reason') || content.toLowerCase().includes('code') ? 'Gemini 2.5 Pro' : 'Gemini 2.5 Flash',
-          temperature: content.toLowerCase().includes('creative') ? 0.7 : 0.2,
-          instructions: `You are ${inferredName}.\nPrimary objective: Specialize in fulfilling user goals: ${content}.\nOperational guidelines:\n1. Maintain concise, direct, and factual explanations.\n2. Leverage attached knowledge bases and tools for verification.\n3. Return structured data or code snippets when helpful.`,
-          toolIds: content.toLowerCase().includes('sql') ? ['tool-sql-db'] : ['tool-web-search'],
-          knowledgeIds: knowledge.slice(0, 1).map((k) => k.id),
-        };
-
-        const codeSnippet = `from google import genai\n\nclient = genai.Client()\nresponse = client.models.generate_content(\n    model="${proposedBot.model}",\n    contents="...",\n    config={\n        "system_instruction": """${proposedBot.instructions}""",\n        "temperature": ${proposedBot.temperature},\n    }\n)`;
-
-        const proposalContentEn = `I have analyzed your requirements and architected an optimal **Agent Bot** for **${proposedBot.name}**.\n\n- **Bot Type**: Agent Bot (LLM + Tools + Knowledge)\n- **Model Engine**: ${proposedBot.model} (High reasoning throughput)\n- **System Prompt**: Synthesized with operational constraints and structured responses\n- **Capabilities**: Pre-wired with connected tools and retrieval indices\n\nYou can inspect the proposed blueprint below and deploy it directly into the **Google AI Studio Playground**.`;
-        const proposalContentFa = `طرح معماری **ایجنت هوشمند** برای **${proposedBot.name}** آماده شد:\n\n- **نوع بات**: ایجنت هوشمند (مبتنی بر LLM، ابزارها و دانش)\n- **موتور مدل**: ${proposedBot.model} (دقت استدلال بالا)\n- **دستورالعمل‌ها**: تدوین پرامپت با ساختار دقیق\n- **قابلیت‌ها**: متصل به ابزارهای وب و منابع دانش\n\nمی‌توانید طرح را بررسی کرده و در استودیو باز کنید.`;
-
-        setConversations((prev) =>
-          prev.map((c) => {
-            if (c.id !== targetConvId) return c;
-            return {
-              ...c,
-              messages: c.messages.map((m) =>
-                m.id === botMsgId
-                  ? {
-                      ...m,
-                      content: isRTL ? proposalContentFa : proposalContentEn,
-                      isStreaming: false,
-                      botProposal: {
-                        proposedBot,
-                        codeSnippet,
-                      },
-                    }
-                  : m
-              ),
-            };
-          })
-        );
-      } else {
-        // Standard chat response
-        const responseTextEn = `Based on your request, I've processed the context with **${selectedBot.name}**:\n\n1. **Analysis & Findings**:\n   - Verified your input against active model instructions and grounding parameters.\n   - Successfully retrieved relevant chunks and aligned outputs.\n\n2. **Next Steps**:\n   - You can test different responses in the **Studio Playground**.\n   - Connected tools are operating within normal latencies.`;
-        const responseTextFa = `بر اساس درخواست شما، اطلاعات با استفاده از **${selectedBot.nameFa || selectedBot.name}** بررسی شد:\n\n۱. **یافته‌ها و استدلال**:\n   - درخواست شما با دستورالعمل‌های فعال و منابع متصل مطابقت داده شد.\n   - خروجی با دقت تولید گردید.\n\n۲. **گام‌های بعدی**:\n   - در صورت تمایل می‌توانید در **پلی‌گراند استودیو** پاسخ‌ها را شبیه‌سازی و ارزیابی کنید.`;
-
-        setConversations((prev) =>
-          prev.map((c) => {
-            if (c.id !== targetConvId) return c;
-            return {
-              ...c,
-              messages: c.messages.map((m) =>
-                m.id === botMsgId
-                  ? {
-                      ...m,
-                      content: isRTL ? responseTextFa : responseTextEn,
-                      isStreaming: false,
-                    }
-                  : m
-              ),
-            };
-          })
-        );
-      }
-      setIsStreaming(false);
-    }, 1600);
-  };
-
-  const stopStreaming = () => {
-    setIsStreaming(false);
-  };
-
-  const regenerateLastMessage = () => {
-    if (!activeConversation || activeConversation.messages.length === 0) return;
-    const lastUserMsg = [...activeConversation.messages].reverse().find((m) => m.sender === 'user');
-    if (lastUserMsg) {
-      sendMessage(lastUserMsg.content);
-    }
-  };
-
-  const setMessageFeedback = (messageId: string, feedback: 'good' | 'bad') => {
-    if (!activeConversationId) return;
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id !== activeConversationId) return c;
-        return {
-          ...c,
-          messages: c.messages.map((m) =>
-            m.id === messageId ? { ...m, feedback } : m
-          ),
-        };
-      })
-    );
-  };
-
-  // Bot Interactive Simulation Runner in Studio
-  const testBotMessage = (message: string) => {
-    if (!message.trim() || !editingBot) return;
-
-    const userMsg: ChatMessage = {
-      id: `sim-user-${Date.now()}`,
-      sender: 'user',
-      content: message,
-      timestamp: 'Just now',
-    };
-
-    setBotSimulationMessages((prev) => [...prev, userMsg]);
-
-    setTimeout(() => {
-      if (editingBot.botType === 'simple') {
-        const matchingRule = editingBot.deterministicRules?.find((r) =>
-          message.toLowerCase().includes(r.trigger.toLowerCase())
-        );
-        const reply = matchingRule
-          ? `[Deterministic Rule Match: "${matchingRule.trigger}"]\n${matchingRule.response}`
-          : `[Deterministic Execution (No LLM)]\nProcessed input: "${message}". Zero latency rule execution complete.`;
-        const replyFa = matchingRule
-          ? `[انطباق قانون قطعی: "${matchingRule.trigger}"]\n${matchingRule.response}`
-          : `[اجرای قطعی (بدون مدل زبانی)]\nورودی پردازش شد: "${message}". اجرای بلادرنگ بدون مدل.`;
-
-        setBotSimulationMessages((prev) => [
-          ...prev,
-          {
-            id: `sim-bot-${Date.now()}`,
-            sender: 'bot',
-            content: isRTL ? replyFa : reply,
-            timestamp: 'Instant (1ms)',
-          },
-        ]);
-        return;
-      }
-
-      const response = `[${editingBot.model} Simulation · T=${editingBot.temperature}]\nResponse generated according to system instructions:\n"${message}" was processed successfully with ${editingBot.toolIds.length} tools and ${editingBot.knowledgeIds.length} knowledge sources attached.`;
-      const responseFa = `[شبیه‌ساز ${editingBot.model} · دما=${editingBot.temperature}]\nپاسخ بر اساس پرامپت سیستم تنظیم شد:\nدرخواست "${message}" با موفقیت پردازش شد. تعداد ابزارهای متصل: ${editingBot.toolIds.length}، تعداد منابع دانش: ${editingBot.knowledgeIds.length}.`;
-
-      setBotSimulationMessages((prev) => [
-        ...prev,
-        {
-          id: `sim-bot-${Date.now()}`,
-          sender: 'bot',
-          content: isRTL ? responseFa : response,
-          timestamp: 'Just now',
-        },
-      ]);
-    }, editingBot.botType === 'simple' ? 50 : 600);
-  };
-
-  const clearBotSimulation = () => {
-    setBotSimulationMessages([]);
-  };
-
-  // Agent Chat to Edit Bot in Studio
-  const agentRefineBot = (botId: string, prompt: string) => {
-    if (!prompt.trim() || !editingBot) return;
-
-    const userMsg: ChatMessage = {
-      id: `agent-edit-user-${Date.now()}`,
-      sender: 'user',
-      content: prompt,
-      timestamp: 'Just now',
-    };
-
-    setAgentEditMessages((prev) => [...prev, userMsg]);
-    setIsAgentEditing(true);
-
-    setTimeout(() => {
-      // Analyze user prompt and synthesize edits
-      let updatedInstructions = editingBot.instructions;
-      let updatedTemp = editingBot.temperature;
-      let notes = 'Refined via Agent conversation';
-
-      if (/json/i.test(prompt)) {
-        updatedInstructions += '\n\nFormat all responses strictly as validated JSON schemas.';
-        notes = 'Added strict JSON formatting rule';
-      }
-      if (/concise|short|کوتاه/i.test(prompt)) {
-        updatedInstructions += '\n\nKeep answers strictly under 3 sentences.';
-        notes = 'Enforced brevity guideline';
-      }
-      if (/temperature|دما/i.test(prompt)) {
-        updatedTemp = Math.max(0.0, Math.min(1.0, updatedTemp - 0.1));
-        notes = `Adjusted temperature to ${updatedTemp.toFixed(2)}`;
-      }
-
-      const updatedBot: BotItem = {
-        ...editingBot,
-        instructions: updatedInstructions,
-        temperature: updatedTemp,
-        version: `1.${parseInt(editingBot.version.split('.')[1] || '0') + 1}.0`,
-        versions: [
-          {
-            version: `1.${parseInt(editingBot.version.split('.')[1] || '0') + 1}.0`,
-            updatedAt: 'Just now',
-            notes,
-            model: editingBot.model,
-            temperature: updatedTemp,
-          },
-          ...editingBot.versions,
-        ],
-      };
-
-      saveBot(updatedBot);
-      setEditingBot(updatedBot);
-
-      const agentReplyEn = `I have updated **${editingBot.name}**:\n- ${notes}\n- Bumped version to **${updatedBot.version}**\n- Instructions and hyperparameters synchronized in the Studio editor.`;
-      const agentReplyFa = `تغییرات در **${editingBot.nameFa || editingBot.name}** اعمال شد:\n- ${notes}\n- نسخه به **${updatedBot.version}** ارتقا یافت\n- دستورالعمل‌ها و پارامترها در استودیو همگام‌سازی شدند.`;
-
-      setAgentEditMessages((prev) => [
-        ...prev,
-        {
-          id: `agent-edit-reply-${Date.now()}`,
-          sender: 'bot',
-          content: isRTL ? agentReplyFa : agentReplyEn,
-          timestamp: 'Just now',
-        },
-      ]);
-      setIsAgentEditing(false);
-    }, 1000);
-  };
-
-  const clearAgentEditChat = () => {
-    setAgentEditMessages([]);
-  };
-
-  const clearStudioOpenRequest = () => setStudioOpenRequest(null);
-
-  const saveBot = (updated: BotItem) => {
-    setBots((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
-  };
-
-  // Tools
-  const toggleTool = (toolId: string) => {
-    setTools((prev) =>
-      prev.map((t) => (t.id === toolId ? { ...t, enabled: !t.enabled } : t))
-    );
-  };
-
-  const addTool = (tool: Partial<ToolItem>) => {
-    const newT: ToolItem = {
-      id: `tool-${Date.now()}`,
-      name: tool.name || 'Custom Tool',
-      purpose: tool.purpose || 'Custom external capability',
-      icon: tool.icon || 'Link',
-      connectionState: 'Connected',
-      category: tool.category || 'api',
-      enabled: true,
-      ...tool,
-    };
-    setTools((prev) => [...prev, newT]);
-  };
-
-  // Knowledge
-  const uploadFiles = (uploaded: File[]) => {
-    uploaded.forEach((file) => {
-      const id = `kb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-      const newK: KnowledgeItem = {
-        id,
-        name: file.name,
-        type: file.name.endsWith('.csv') ? 'csv' : file.name.endsWith('.pdf') ? 'pdf' : 'doc',
-        fileCount: 1,
-        sizeFormatted: `${sizeMb} MB`,
-        status: 'Uploading',
-        progressPercent: 20,
-        chunksCount: 0,
-        updatedAt: 'Just now',
-      };
-      setKnowledge((prev) => [newK, ...prev]);
-    });
-  };
-
-  const addKnowledge = (item: Partial<KnowledgeItem>) => {
-    const newK: KnowledgeItem = {
-      id: `kb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      name: item.name || 'Untitled Document',
-      nameFa: item.nameFa || item.name || 'سند بدون عنوان',
-      type: item.type || 'pdf',
-      fileCount: item.fileCount || 1,
-      sizeFormatted: item.sizeFormatted || '1.2 MB',
-      status: item.status || 'Ready',
-      progressPercent: item.progressPercent ?? 100,
-      chunksCount: item.chunksCount || 24,
-      updatedAt: 'Just now',
-      ...item,
-    };
-    setKnowledge((prev) => [newK, ...prev]);
-  };
-
-  const resetWorkspaceData = () => {
-    setBots(mockBots);
-    setTools(mockTools);
-    setKnowledge(mockKnowledge);
-    setConversations(mockConversations);
-    setActiveConversationId(null);
-    setEditingBot(null);
-    setSelectedBotId(mockBots[0].id);
-    setStudioOpenRequest(null);
-  };
 
   // Keyboard shortcut Cmd+K / Ctrl+K
   useEffect(() => {
@@ -989,32 +523,512 @@ def handle_message(text: str) -> str:
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const setLocale = (l: SupportedLocale) => {
-    setLocaleState(l);
+  // --- conversations & runs ----------------------------------------------
+
+  const startNewChat = (botId?: string) => {
+    setActiveConversationId(null);
+    setChatMode('chat');
+    setEditingBotInChat(null);
+    if (botId) setSelectedBotId(botId);
+    setCurrentSection('chat');
+    setIsMobileDrawerOpen(false);
   };
 
-  const navigate = (route: { section: MainSection | 'auth'; botId?: string; botView?: 'overview' | 'studio' }) => {
-    writeRoute(route);
-    if (route.section !== 'auth') {
-      setCurrentSection(route.section);
+  const startBotGenerationChat = () => {
+    setActiveConversationId(null);
+    setChatMode('bot-generation');
+    setEditingBotInChat(null);
+    setCurrentSection('chat');
+    setIsMobileDrawerOpen(false);
+  };
+
+  const selectConversation = (id: string) => {
+    setActiveConversationId(id);
+    setCurrentSection('chat');
+    setIsMobileDrawerOpen(false);
+    void (async () => {
+      try {
+        const full = await conversationsApi.get(id);
+        setConversations((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, ...full, messages: full.messages } : c))
+        );
+        setSelectedBotId(full.botId);
+        if (full.mode === 'simple-bot') {
+          setAgentMode('simple-bot');
+          setChatMode('bot-generation');
+        } else {
+          setAgentMode('agent-bot');
+          setChatMode('chat');
+        }
+      } catch {
+        // A conversation that vanished server-side simply is not selected.
+      }
+    })();
+  };
+
+  const deleteConversation = (id: string) => {
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    if (activeConversationId === id) setActiveConversationId(null);
+    void conversationsApi.remove(id).catch(() => undefined);
+  };
+
+  const renameConversation = (id: string, newTitle: string) => {
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title: newTitle } : c)));
+    void conversationsApi.update(id, { title: newTitle }).catch(() => undefined);
+  };
+
+  const finalizeRun = useCallback(async (conversationId: string, assistantId: string) => {
+    const current = activeRunRef.current;
+    if (current && current.assistantId === assistantId) {
+      activeRunRef.current = null;
+      current.stream.close();
+    }
+    setIsStreaming(false);
+    try {
+      const fresh = await conversationsApi.get(conversationId);
+      setConversations((prev) =>
+        prev.map((c) => (c.id === conversationId ? { ...c, ...fresh, messages: fresh.messages } : c))
+      );
+    } catch {
+      // Keep whatever was streamed if the refresh fails.
+      patchMessage(conversationId, assistantId, (m) => ({ ...m, isStreaming: false }));
+    }
+  }, [patchMessage]);
+
+  const startRunStream = useCallback(
+    (conversationId: string, runId: string, assistantId: string) => {
+      activeRunRef.current?.stream.close();
+      const stream = subscribeToRun(runId, {
+        onEvent: (event: RunEvent) => {
+          const eventType = event.data?.type as string | undefined;
+          if (event.type === 'agent.delta') {
+            const text = String(event.data?.text ?? '');
+            if (text) {
+              patchMessage(conversationId, assistantId, (m) => ({
+                ...m,
+                content: m.content + text,
+                isStreaming: true,
+              }));
+            }
+            return;
+          }
+          if (event.type === 'tool.started' || event.type === 'tool.completed' || event.type === 'tool.failed') {
+            const name = String(event.data?.tool ?? 'tool');
+            const status =
+              event.type === 'tool.started' ? 'running' : event.type === 'tool.completed' ? 'completed' : 'failed';
+            patchMessage(conversationId, assistantId, (m) => {
+              const activity = [...(m.toolActivity ?? [])];
+              const index = activity.findIndex((a) => a.name === name);
+              const entry = { name, status: status as 'running' | 'completed' | 'failed', detail: String(event.data?.detail ?? '') };
+              if (index === -1) activity.push(entry);
+              else activity[index] = entry;
+              return { ...m, toolActivity: activity };
+            });
+            return;
+          }
+          if (event.type === 'run.failed') {
+            const message = String(event.data?.message ?? eventType ?? 'The run failed.');
+            patchMessage(conversationId, assistantId, (m) => ({
+              ...m,
+              content: m.content || message,
+              isStreaming: false,
+            }));
+            return;
+          }
+          if (event.type === 'run.cancelled') {
+            patchMessage(conversationId, assistantId, (m) => ({ ...m, isStreaming: false }));
+          }
+        },
+        onError: () => void finalizeRun(conversationId, assistantId),
+        onClose: () => {
+          if (activeRunRef.current?.assistantId === assistantId) {
+            void finalizeRun(conversationId, assistantId);
+          }
+        },
+      });
+      activeRunRef.current = { runId, conversationId, assistantId, stream };
+    },
+    [finalizeRun, patchMessage]
+  );
+
+  const sendMessage = (
+    content: string,
+    attachments?: { name: string; sizeFormatted: string; type: string }[]
+  ) => {
+    const text = content?.trim() ?? '';
+    if (!text && (!attachments || attachments.length === 0)) return;
+    setIsStreaming(true);
+    void (async () => {
+      try {
+        if (!activeConversationIdRef.current) {
+          const created = await conversationsApi.create({
+            bot_id: selectedBotIdRef.current,
+            title: text.slice(0, 36) || 'New Conversation',
+            mode: agentModeRef.current,
+          });
+          setConversations((prev) => [{ ...created, messages: [] }, ...prev.filter((c) => c.id !== created.id)]);
+          setActiveConversationId(created.id);
+          activeConversationIdRef.current = created.id;
+        }
+        const conversationId = activeConversationIdRef.current as string;
+        const result = await conversationsApi.sendMessage(conversationId, {
+          content: text,
+          attachments: attachments?.map((a) => ({
+            name: a.name,
+            size_formatted: a.sizeFormatted,
+            type: a.type,
+          })),
+        });
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.id !== conversationId) return c;
+            const without = c.messages.filter(
+              (m) => m.id !== result.user_message.id && m.id !== result.assistant_message.id
+            );
+            return {
+              ...c,
+              updatedAt: 'Just now',
+              messages: [...without, result.user_message, result.assistant_message],
+            };
+          })
+        );
+        startRunStream(conversationId, result.run_id, result.assistant_message.id);
+      } catch (error) {
+        setIsStreaming(false);
+        const conversationId = activeConversationIdRef.current;
+        if (conversationId) {
+          const failure: ChatMessage = {
+            id: `error-${Date.now()}`,
+            sender: 'bot',
+            content: errorMessage(error),
+            timestamp: 'Just now',
+          };
+          setConversations((prev) =>
+            prev.map((c) => (c.id === conversationId ? { ...c, messages: [...c.messages, failure] } : c))
+          );
+        }
+      }
+    })();
+  };
+
+  const stopStreaming = () => {
+    const current = activeRunRef.current;
+    activeRunRef.current = null;
+    setIsStreaming(false);
+    if (current) {
+      current.stream.close();
+      void runsApi.cancel(current.runId).catch(() => undefined);
+      patchMessage(current.conversationId, current.assistantId, (m) => ({ ...m, isStreaming: false }));
     }
   };
 
-  const signIn = (email: string, name?: string) => {
-    const next = {
-      email,
-      name: name?.trim() || email.split('@')[0] || 'Workspace',
-    };
-    setSession(next);
-    writeStorage(STORAGE_KEYS.session, next);
-    setCurrentSection('chat');
-    writeRoute({ section: 'chat' });
+  const regenerateLastMessage = () => {
+    if (!activeConversation || activeConversation.messages.length === 0) return;
+    const lastUserMsg = [...activeConversation.messages].reverse().find((m) => m.sender === 'user');
+    if (lastUserMsg) sendMessage(lastUserMsg.content);
   };
 
-  const signOut = () => {
-    setSession(null);
-    removeStorage(STORAGE_KEYS.session);
-    writeRoute({ section: 'auth' });
+  const setMessageFeedback = (messageId: string, feedback: 'good' | 'bad') => {
+    setConversations((prev) =>
+      prev.map((c) => ({
+        ...c,
+        messages: c.messages.map((m) => (m.id === messageId ? { ...m, feedback } : m)),
+      }))
+    );
+    void conversationsApi.feedback(messageId, feedback).catch(() => undefined);
+  };
+
+  // --- bot studio ---------------------------------------------------------
+
+  const resetBotSimulation = useCallback(
+    (bot: BotItem) => {
+      setBotSimulationMessages([
+        {
+          id: `sim-intro-${bot.id}`,
+          sender: 'bot',
+          content: `Hello! I am ${isRTL ? bot.nameFa || bot.name : bot.name} running on ${bot.model}. Ask me anything to test my responses.`,
+          timestamp: 'Ready',
+        },
+      ]);
+    },
+    [isRTL]
+  );
+
+  const openBotInStudio = (bot: BotItem, tab: StudioTab = 'playground') => {
+    setEditingBot(bot);
+    setSelectedBotId(bot.id);
+    setActiveStudioTab(tab);
+    setCurrentSection('bots');
+    setStudioOpenRequest({ botId: bot.id, tab, nonce: Date.now() });
+    resetBotSimulation(bot);
+  };
+
+  const createAndOpenSimpleBot = async (promptText?: string): Promise<BotItem> => {
+    const cleanPrompt = promptText?.trim() || '';
+    const firstWord = cleanPrompt.split(' ')[0]?.toLowerCase() || 'ping';
+    const botName =
+      cleanPrompt.length > 0
+        ? cleanPrompt.length > 24
+          ? `${cleanPrompt.slice(0, 24).trim()}...`
+          : cleanPrompt
+        : `Static Rule Bot #${bots.length + 1}`;
+    const rules = [
+      { trigger: firstWord, response: `Instant deterministic match for "${cleanPrompt || firstWord}".` },
+      { trigger: 'ping', response: 'pong! (Instant deterministic execution)' },
+      { trigger: 'help', response: 'Available commands: ping, status, help, pricing' },
+      { trigger: 'status', response: 'All systems operational. Zero model dependencies.' },
+    ];
+    const created = await botsApi.create({
+      name: botName,
+      name_fa: botName,
+      description: cleanPrompt || 'Deterministic rule-based bot operating without any LLM models.',
+      description_fa: cleanPrompt || 'بات قطعی مبتنی بر قانون بدون نیاز به مدل‌های زبانی.',
+      avatar_icon: '⚡',
+      bot_type: 'simple',
+      deterministic_rules: rules,
+      instructions: 'Deterministic condition-action rules without models, tools, or knowledge.',
+    });
+    setBots((prev) => [created, ...prev.filter((b) => b.id !== created.id)]);
+    openBotInStudio(created, 'playground');
+    return created;
+  };
+
+  const toggleBotEnabled = (botId: string) => {
+    const bot = bots.find((b) => b.id === botId);
+    if (!bot) return;
+    const nextEnabled = !bot.enabled;
+    setBots((prev) => prev.map((b) => (b.id === botId ? { ...b, enabled: nextEnabled } : b)));
+    if (editingBot?.id === botId) setEditingBot({ ...editingBot, enabled: nextEnabled });
+    void botsApi
+      .update(botId, { enabled: nextEnabled })
+      .then((saved) => setBots((prev) => prev.map((b) => (b.id === saved.id ? saved : b))))
+      .catch(() => setBots((prev) => prev.map((b) => (b.id === botId ? { ...b, enabled: !nextEnabled } : b))));
+  };
+
+  const saveBot = (updated: BotItem) => {
+    setBots((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+    void botsApi
+      .update(updated.id, botToWrite(updated))
+      .then((saved) => {
+        setBots((prev) => prev.map((b) => (b.id === saved.id ? saved : b)));
+        setEditingBot((prev) => (prev && prev.id === saved.id ? saved : prev));
+      })
+      .catch((error) => console.error('Failed to save bot', error));
+  };
+
+  const confirmAndDeployBot = async (proposed: Partial<BotItem>): Promise<BotItem> => {
+    const created = await botsApi.create({
+      name: proposed.name || 'Custom AI Agent',
+      name_fa: proposed.nameFa,
+      description: proposed.description || 'Custom generated agent built with Agent conversation.',
+      description_fa: proposed.descriptionFa,
+      avatar_icon: proposed.avatarIcon || 'Bot',
+      bot_type: proposed.botType ?? 'agent',
+      provider: proposed.provider,
+      model_id: proposed.modelId,
+      instructions: proposed.instructions || 'You are an intelligent, grounded AI agent.',
+      instructions_fa: proposed.instructionsFa,
+      tool_ids: proposed.toolIds ?? [],
+      knowledge_ids: proposed.knowledgeIds ?? [],
+      deterministic_rules: proposed.deterministicRules ?? [],
+      temperature: proposed.temperature,
+      top_p: proposed.topP,
+      max_output_tokens: proposed.maxOutputTokens,
+    });
+    setBots((prev) => [created, ...prev.filter((b) => b.id !== created.id)]);
+    openBotInStudio(created, 'playground');
+    return created;
+  };
+
+  const testBotMessage = (message: string) => {
+    if (!message.trim() || !editingBot) return;
+    const userMsg: ChatMessage = {
+      id: `sim-user-${Date.now()}`,
+      sender: 'user',
+      content: message,
+      timestamp: 'Just now',
+    };
+    const assistantId = `sim-bot-${Date.now()}`;
+    setBotSimulationMessages((prev) => [
+      ...prev,
+      userMsg,
+      { id: assistantId, sender: 'bot', content: '', timestamp: 'Streaming', isStreaming: true },
+    ]);
+    const botId = editingBot.id;
+    simulationStreamRef.current?.close();
+    void (async () => {
+      try {
+        const run = await runsApi.create({ bot_id: botId, input: message });
+        const stream = subscribeToRun(run.run_id, {
+          onEvent: (event: RunEvent) => {
+            if (event.type === 'agent.delta') {
+              const text = String(event.data?.text ?? '');
+              if (text) {
+                setBotSimulationMessages((prev) =>
+                  prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + text } : m))
+                );
+              }
+            } else if (event.type === 'run.failed') {
+              const failure = String(event.data?.message ?? 'The run failed.');
+              setBotSimulationMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: m.content || failure, isStreaming: false } : m
+                )
+              );
+            } else if (event.type === 'run.completed') {
+              setBotSimulationMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false, timestamp: 'Just now' } : m))
+              );
+            }
+          },
+          onError: () =>
+            setBotSimulationMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m))
+            ),
+          onClose: () =>
+            setBotSimulationMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m))
+            ),
+        });
+        simulationStreamRef.current = stream;
+        void runsApi
+          .get(run.run_id)
+          .then((record) => {
+            if (record.status === 'succeeded' && record.output) {
+              // Deltas are live-only; the run record is authoritative if we missed them.
+              setBotSimulationMessages((prev) =>
+                prev.map((m) => (m.id === assistantId && !m.content ? { ...m, content: record.output ?? '' } : m))
+              );
+            }
+          })
+          .catch(() => undefined);
+      } catch (error) {
+        setBotSimulationMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: errorMessage(error), isStreaming: false } : m
+          )
+        );
+      }
+    })();
+  };
+
+  const clearBotSimulation = () => setBotSimulationMessages([]);
+
+  const agentRefineBot = (botId: string, prompt: string) => {
+    const current = editingBotRef.current;
+    if (!prompt.trim() || !current) return;
+    const userMsg: ChatMessage = {
+      id: `agent-edit-user-${Date.now()}`,
+      sender: 'user',
+      content: prompt,
+      timestamp: 'Just now',
+    };
+    setAgentEditMessages((prev) => [...prev, userMsg]);
+    setIsAgentEditing(true);
+    void (async () => {
+      let instructions = current.instructions;
+      let temperature = current.temperature;
+      let notes = 'Refined via Agent conversation';
+      if (/json/i.test(prompt)) {
+        instructions += '\n\nFormat all responses strictly as validated JSON schemas.';
+        notes = 'Added strict JSON formatting rule';
+      }
+      if (/concise|short|کوتاه/i.test(prompt)) {
+        instructions += '\n\nKeep answers strictly under 3 sentences.';
+        notes = 'Enforced brevity guideline';
+      }
+      if (/temperature|دما/i.test(prompt)) {
+        temperature = Math.max(0.0, Math.min(1.0, Number((temperature - 0.1).toFixed(2))));
+        notes = `Adjusted temperature to ${temperature.toFixed(2)}`;
+      }
+      const updated: BotItem = { ...current, instructions, temperature };
+      try {
+        const saved = await botsApi.update(botId, { instructions, temperature, bot_type: updated.botType });
+        setBots((prev) => prev.map((b) => (b.id === saved.id ? saved : b)));
+        setEditingBot(saved);
+        setAgentEditMessages((prev) => [
+          ...prev,
+          {
+            id: `agent-edit-reply-${Date.now()}`,
+            sender: 'bot',
+            content: `I have updated ${saved.name}:\n- ${notes}\n- Bumped version to ${saved.version}`,
+            timestamp: 'Just now',
+          },
+        ]);
+      } catch (error) {
+        setAgentEditMessages((prev) => [
+          ...prev,
+          {
+            id: `agent-edit-error-${Date.now()}`,
+            sender: 'bot',
+            content: `I could not save that change: ${errorMessage(error)}`,
+            timestamp: 'Just now',
+          },
+        ]);
+      } finally {
+        setIsAgentEditing(false);
+      }
+    })();
+  };
+
+  const clearAgentEditChat = () => setAgentEditMessages([]);
+  const clearStudioOpenRequest = () => setStudioOpenRequest(null);
+
+  // --- tools --------------------------------------------------------------
+
+  const toggleTool = (toolId: string) => {
+    const tool = tools.find((x) => x.id === toolId);
+    if (!tool) return;
+    const nextEnabled = !tool.enabled;
+    setTools((prev) => prev.map((x) => (x.id === toolId ? { ...x, enabled: nextEnabled } : x)));
+    void toolsApi
+      .update(toolId, { enabled: nextEnabled })
+      .then((saved) => setTools((prev) => prev.map((x) => (x.id === saved.id ? saved : x))))
+      .catch(() =>
+        setTools((prev) => prev.map((x) => (x.id === toolId ? { ...x, enabled: !nextEnabled } : x)))
+      );
+  };
+
+  const addTool = (tool: Partial<ToolItem>) => {
+    void toolsApi
+      .create(toolToWrite(tool))
+      .then((created) => setTools((prev) => [created, ...prev]))
+      .catch((error) => console.error('Failed to create tool', error));
+  };
+
+  const saveToolToWorkspace = async (proposed: Partial<ToolItem>): Promise<ToolItem> => {
+    const created = await toolsApi.create(toolToWrite(proposed));
+    setTools((prev) => [created, ...prev.filter((t) => t.id !== created.id)]);
+    setCurrentSection('tools');
+    return created;
+  };
+
+  // --- knowledge ----------------------------------------------------------
+
+  const uploadFiles = (files: File[]) => {
+    if (files.length === 0) return;
+    void (async () => {
+      try {
+        const created = await knowledgeApi.upload(files);
+        setKnowledge((prev) => [...created, ...prev]);
+        startKnowledgePolling();
+      } catch (error) {
+        console.error('Failed to upload knowledge', error);
+      }
+    })();
+  };
+
+  // --- account ------------------------------------------------------------
+
+  const resetWorkspaceData = () => {
+    void loadWorkspace().catch(() => undefined);
+  };
+
+  const setLocale = (l: SupportedLocale) => setLocaleState(l);
+
+  const navigate = (route: { section: MainSection | 'auth'; botId?: string; botView?: 'overview' | 'studio' }) => {
+    writeRoute(route);
+    if (route.section !== 'auth') setCurrentSection(route.section);
   };
 
   const handleSetCustomPrimaryColor = (hex: string) => {
@@ -1029,8 +1043,10 @@ def handle_message(text: str) -> str:
         setCurrentSection,
         navigate,
         isAuthenticated,
+        isBooting,
         session,
         signIn,
+        signUp,
         signOut,
         isSidebarCollapsed,
         setIsSidebarCollapsed,
@@ -1094,7 +1110,6 @@ def handle_message(text: str) -> str:
         addTool,
         knowledge,
         uploadFiles,
-        addKnowledge,
         account,
         resetWorkspaceData,
         isCommandPaletteOpen,

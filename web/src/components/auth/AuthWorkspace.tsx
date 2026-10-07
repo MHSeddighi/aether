@@ -10,7 +10,7 @@ const fieldBase =
 const labelBase = 'block text-xs font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1.5';
 
 export const AuthWorkspace: React.FC = () => {
-  const { signIn, t, isRTL } = useWorkspace();
+  const { signIn, signUp, t, isRTL } = useWorkspace();
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,17 +18,49 @@ export const AuthWorkspace: React.FC = () => {
   const [name, setName] = useState('');
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const isSignUp = mode === 'signup';
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSignUp && password !== confirm) {
       setError(t.authCheckPasswords);
       return;
     }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
     setError(null);
-    signIn(email.trim(), isSignUp ? name : undefined);
+    setBusy(true);
+    try {
+      if (isSignUp) {
+        await signUp(email.trim(), name.trim() || email.split('@')[0], password);
+      } else {
+        await signIn(email.trim(), password);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSocial = async () => {
+    if (!email.trim() || !password) {
+      setError('Enter your email and password first.');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      await signIn(email.trim(), password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const switchMode = (next: AuthMode) => {
@@ -124,7 +156,7 @@ export const AuthWorkspace: React.FC = () => {
                     id="auth-password"
                     type="password"
                     required
-                    minLength={6}
+                    minLength={8}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className={fieldBase}
@@ -142,10 +174,10 @@ export const AuthWorkspace: React.FC = () => {
                     <Check className="w-4 h-4 absolute start-3.5 top-1/2 -translate-y-1/2 text-[var(--md-sys-color-on-surface-variant)]" />
                     <input
                       id="auth-confirm"
-                      type="password"
-                      required
-                      minLength={6}
-                      value={confirm}
+                    type="password"
+                    required
+                    minLength={8}
+                    value={confirm}
                       onChange={(e) => setConfirm(e.target.value)}
                       className={fieldBase}
                       autoComplete="new-password"
@@ -181,9 +213,10 @@ export const AuthWorkspace: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full h-11 rounded-lg bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] text-sm font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5"
+                disabled={busy}
+                className="w-full h-11 rounded-lg bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] text-sm font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 disabled:opacity-60"
               >
-                <span>{isSignUp ? t.authCreateAccount : t.authContinue}</span>
+                <span>{busy ? '…' : isSignUp ? t.authCreateAccount : t.authContinue}</span>
                 {isRTL ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
               </button>
             </form>
@@ -199,8 +232,9 @@ export const AuthWorkspace: React.FC = () => {
                 <button
                   key={label}
                   type="button"
-                  onClick={() => signIn(email.trim() || 'you@example.com')}
-                  className="w-full h-10 rounded-lg bg-[var(--md-sys-color-surface-container-high)] hover:bg-[var(--md-sys-color-surface-container-highest)] text-[var(--md-sys-color-on-surface)] text-xs font-medium transition-colors"
+                  onClick={handleSocial}
+                  disabled={busy}
+                  className="w-full h-10 rounded-lg bg-[var(--md-sys-color-surface-container-high)] hover:bg-[var(--md-sys-color-surface-container-highest)] text-[var(--md-sys-color-on-surface)] text-xs font-medium transition-colors disabled:opacity-60"
                 >
                   {label}
                 </button>

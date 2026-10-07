@@ -3,7 +3,7 @@
 ## Boundaries
 
 ```
-web/ (existing frontend, untouched)
+web/ (React 19 + Vite; REST + SSE via web/src/lib/api.ts and sse.ts)
       │ REST + SSE
       ▼
 FastAPI (app/api)                ── control plane, auth, validation, SSE

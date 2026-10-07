@@ -22,7 +22,7 @@ from datetime import UTC, datetime, timedelta
 from app.application.bot_service import BotService
 from app.application.ports import ConversationRepositoryPort, RunRepositoryPort, RunStarter
 from app.domain.bots import BotStatus, BotVersion
-from app.domain.conversations import HISTORY_WINDOW
+from app.domain.conversations import HISTORY_WINDOW, Sender
 from app.domain.failures import FailureReason, ValidationFailure
 from app.domain.ids import new_id
 from app.domain.runs import Run, RunEvent, RunEventType, RunStatus
@@ -199,8 +199,10 @@ class RunService:
         conversation = await self._conversations.get(run.conversation_id, workspace_id)
         if conversation is None:
             return ()
+        # The agent's `ConversationTurn` speaks "user"/"assistant"; the message contract speaks
+        # "user"/"bot". Translating here keeps the two vocabularies from leaking into each other.
         turns = [
-            (str(message.sender), message.content)
+            ("user" if message.sender is Sender.USER else "assistant", message.content)
             for message in conversation.messages
             if message.content.strip() and not message.is_streaming
         ]

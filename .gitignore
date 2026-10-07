@@ -15,3 +15,6 @@ backend/data/
 .DS_Store
 .idea/
 .vscode/
+
+# E2E harness dependencies
+scripts/e2e/node_modules/

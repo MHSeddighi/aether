@@ -237,3 +237,57 @@ TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/botbuil
 uv run ruff check . && uv run ruff format --check .
 ```
 
+
+## Session 5 — 2026-10-08 (frontend ↔ backend integration)
+
+### Current state
+The React frontend is now wired to the backend; `web/src/data/mockData.ts` is deleted and the only
+browser-local state is presentation settings plus the JWT pair. Verified with a real headless-browser
+E2E against the running stack: **18/18 checks pass**.
+
+### Implemented
+- **`web/src/lib/api.ts`** — one typed client: auth (register/login/refresh/me/logout), bots, tools,
+  knowledge (multipart), conversations/messages/feedback, runs, models. Single-flight token refresh
+  on 401; the backend error envelope is normalised into `ApiError`.
+- **`web/src/lib/sse.ts`** — run streaming over `fetch` (EventSource cannot send an auth header),
+  assembling `id`/`event`/`data` frames from the durable event stream.
+- **`WorkspaceContext`** rewritten to be server-backed: boot validates the token via `/auth/me` and
+  loads the workspace; sign-in/up mint tokens; `sendMessage` creates the conversation, posts the
+  turn, and streams `agent.delta` into the assistant bubble; `stopStreaming` cancels the run;
+  knowledge uploads poll until the indexing workflow reaches a terminal status. A brand-new workspace
+  gets one seeded "Assistant" bot so chat works immediately.
+- **Auth screen** now does real async sign-in/up with error and busy states.
+- **Knowledge screen** uploads real bytes instead of fabricating `Ready` rows.
+- **Vite** proxies `/api` to `:8000` (override with `VITE_API_PROXY_TARGET`).
+- **`scripts/e2e/run.mjs`** — the browser E2E harness (sign-up → streamed reply → bots → knowledge →
+  multi-turn → reload → no runtime errors).
+
+### Bugs found and fixed during integration
+1. **Multi-turn was broken.** `RunService._history` emitted the message contract's `"bot"` sender,
+   but the agent's `ConversationTurn` only accepts `"user"`/`"assistant"` — so the *second* message in
+   every conversation failed validation. The old unit test asserted the wrong value; corrected it to
+   `("assistant", ...)` as the regression.
+2. **Model failures lost their classification across the activity boundary** — a 429 reached the
+   workflow as `unexpected` and was retried blindly. `execute_agent` now raises
+   `to_activity_error(exc)`, so a rate limit is `retryable` and classified.
+3. **Failed runs never finalised the assistant message**, so the error the user saw during streaming
+   vanished on reload. `fail_run` now writes the failure into the assistant bubble.
+4. **Knowledge indexing could not read uploads** — `worker-agent` had no `data` volume while the API
+   wrote the blobs there. Added `data:/data` to both workers in `docker-compose.yml`.
+5. **Invalid HTML**: the bot card was a `<button>` containing the `M3Switch` `<button>`, which React
+   reports as a nested-button error. The card header is now an accessible `div[role=button]`.
+6. The proposal payload stored on a message was snake_case while the UI expects camelCase; added
+   `BotProposal`/`ToolProposal.to_frontend_payload`.
+
+### Verification
+- `npm run lint` (tsc) and `npm run build` clean; `web/src/data/mockData.ts` removed.
+- Backend: **550 passed, 5 skipped** with real Postgres + Temporal; `ruff` clean.
+- `node scripts/e2e/run.mjs` → **18/18**: sign-up, seeded bot, streamed chat reply persisted
+  ("Hello, nice to meet you."), `run.completed` events, knowledge upload indexed to `Ready`,
+  deterministic multi-turn regression, session survives reload, no console/page errors.
+
+### Known issues / next task
+- The free provider occasionally returns 429; the E2E retries that specific classified failure.
+- The studio playground now starts a real run; unsaved editor changes are not yet run (runs use the
+  saved version).
+- Static typechecker still not configured for the backend (see session 4).

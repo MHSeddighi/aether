@@ -6,12 +6,10 @@ export const STORAGE_KEYS = {
   customPrimaryColor: `${PREFIX}customPrimaryColor`,
   locale: `${PREFIX}locale`,
   sidebarCollapsed: `${PREFIX}sidebarCollapsed`,
-  bots: `${PREFIX}bots`,
-  tools: `${PREFIX}tools`,
-  knowledge: `${PREFIX}knowledge`,
-  conversations: `${PREFIX}conversations`,
   selectedBotId: `${PREFIX}selectedBotId`,
-  session: `${PREFIX}session`,
+  // Auth is the only domain state kept in the browser; everything else is server-owned.
+  accessToken: `${PREFIX}accessToken`,
+  refreshToken: `${PREFIX}refreshToken`,
 } as const;
 
 export function readStorage<T>(key: string, fallback: T): T {

@@ -31,9 +31,12 @@ export interface KnowledgeItem {
 
 export interface BotVersion {
   version: string;
+  versionId?: string;
   updatedAt: string;
   notes: string;
   model: string;
+  provider?: string;
+  modelId?: string;
   temperature: number;
 }
 
@@ -66,6 +69,9 @@ export interface BotItem {
   avatarIcon: string;
   avatarBg: string;
   model: string;
+  //: Present on server responses; the backend owns model identity (Rule 4).
+  provider?: string;
+  modelId?: string;
   instructions: string;
   instructionsFa?: string;
   toolIds: string[];
@@ -138,4 +144,48 @@ export interface WorkspaceAccount {
   runsLimit: number;
   tokensUsedMillion: number;
   tokensLimitMillion: number;
+}
+
+// --- durable execution (backend contract) --------------------------------
+
+export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
+
+export interface RunFailure {
+  kind: 'model' | 'validation' | 'tool' | 'security' | 'internal' | 'deadline' | 'cancelled';
+  reason: string;
+  message: string;
+  retryable: boolean;
+  details?: Record<string, unknown>;
+}
+
+export interface RunRecord {
+  id: string;
+  botId: string;
+  botVersionId: string;
+  botVersion: string;
+  status: RunStatus;
+  input: string;
+  conversationId: string | null;
+  assistantMessageId: string | null;
+  model: { provider: string; modelId: string; label: string; temperature: number };
+  failure: RunFailure | null;
+  output: string | null;
+  steps: number;
+  repairs: number;
+  latencyMs: number | null;
+}
+
+export interface RunEvent {
+  seq: number;
+  id: string;
+  runId: string;
+  type: string;
+  ts: string;
+  data: Record<string, unknown>;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
 }

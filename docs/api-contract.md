@@ -5,7 +5,13 @@ Scope: `web/` (Vite + React 19 + Tailwind v4, Google AI Studio template).
 
 ## 1. What the frontend actually is today
 
-- **No network layer at all.** `grep -rn "fetch(|axios|EventSource|WebSocket|VITE_" web/src` → zero
+> **Update (session 5):** the frontend is now wired to this backend. `web/src/lib/api.ts` is the
+> typed client, `web/src/lib/sse.ts` reads the run stream, and `web/src/context/WorkspaceContext.tsx`
+> is server-backed. `web/src/data/mockData.ts` has been deleted and the only browser-local state left
+> is presentation settings plus the auth tokens. The notes below are the original State 0 finding and
+> are kept for provenance.
+
+- **No network layer at all (State 0).** `grep -rn "fetch(|axios|EventSource|WebSocket|VITE_" web/src` → zero
   matches. All persistence is `localStorage` via `web/src/lib/storage.ts`, all "agent" behaviour is
   `setTimeout` + hardcoded strings in `web/src/context/WorkspaceContext.tsx`.
 - Hash router only (`web/src/lib/router.ts`), sections: `chat | bots | tools | knowledge | settings`

@@ -1,6 +1,6 @@
 {
   "project": "bot-builder-backend",
-  "updated": "2026-10-08 (session 4: states 6, 10, 11, 12, 13; states 0-5,7,8,9 verified)",
+  "updated": "2026-10-08 (session 5: frontend integrated with the backend; mock data removed)",
   "states": [
     {
       "id": 0,
@@ -351,6 +351,19 @@
         "full test suite green"
       ],
       "notes": "Dead code removed; dependency direction enforced by tests/unit/test_architecture.py (domain pure, application framework-free, routes DB/Temporal-free, adapters satisfy ports)."
+    },
+    {
+      "id": "frontend-integration",
+      "description": "The existing React frontend is wired to the REST + SSE backend; mock data removed and all domain state is server-backed",
+      "status": "passing",
+      "tests": [
+        "lib/api.ts + lib/sse.ts drive auth, bots, tools, knowledge, conversations and runs",
+        "WorkspaceContext loads server state on boot and after sign-in; no mock imports remain",
+        "Vite dev proxy forwards /api to the backend",
+        "headless-browser E2E (scripts/e2e/run.mjs): sign-up, streamed chat reply persisted, knowledge upload indexed to Ready, multi-turn regression, session survives reload, zero runtime errors",
+        "npm run lint (tsc --noEmit) and npm run build are clean"
+      ],
+      "notes": "Run: backend + worker up, `npm run dev`, then `node scripts/e2e/run.mjs` (needs playwright-core and a chromium binary; CHROME_PATH overrides)."
     }
   ]
 }

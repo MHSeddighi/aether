@@ -39,6 +39,25 @@ class BotProposal(BaseModel):
         """Validated projection stored on the message (Rule 21: never raw model JSON)."""
         return self.model_dump(mode="json", exclude={"code_snippet"})
 
+    @property
+    def to_frontend_payload(self) -> dict[str, Any]:
+        """The stored payload rendered as the frontend's `Partial<BotItem>` (camelCase)."""
+        return {
+            "name": self.name,
+            "nameFa": self.name,
+            "description": self.description,
+            "descriptionFa": self.description,
+            "botType": self.bot_type,
+            "instructions": self.instructions,
+            "provider": self.provider,
+            "modelId": self.model_id,
+            "model": self.model_id,
+            "temperature": self.temperature,
+            "toolIds": list(self.tool_ids),
+            "knowledgeIds": list(self.knowledge_ids),
+            "deterministicRules": list(self.deterministic_rules),
+        }
+
 
 class ToolProposal(BaseModel):
     """`toolProposal` in the frontend."""
@@ -55,6 +74,23 @@ class ToolProposal(BaseModel):
     #: arguments, so a proposal without it is not runnable.
     url: str | None = None
     code_snippet: str | None = None
+
+    @property
+    def to_frontend_payload(self) -> dict[str, Any]:
+        """The stored payload rendered as the frontend's `Partial<ToolItem>` (camelCase)."""
+        return {
+            "name": self.name,
+            "nameFa": self.name,
+            "purpose": self.purpose,
+            "purposeFa": self.purpose,
+            "category": self.category,
+            "icon": self.icon,
+            "handler": self.handler,
+            "inputSchema": self.input_schema,
+            "outputSchema": self.output_schema,
+            "permissions": [str(p) for p in self.permissions],
+            "url": self.url,
+        }
 
 
 class AgentUsage(BaseModel):

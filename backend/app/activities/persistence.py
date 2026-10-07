@@ -28,7 +28,7 @@ from app.agents.runner import AgentRunner
 from app.domain.bots import BotMetricsAccumulator, BotType
 from app.domain.conversations import AttachmentProposal, Message, Sender
 from app.domain.deadline import Deadline
-from app.domain.failures import FailureReason, RunFailure, ValidationFailure
+from app.domain.failures import AgentError, FailureReason, RunFailure, ValidationFailure
 from app.domain.ids import new_id
 from app.domain.models import ModelConfig
 from app.domain.runs import RunEvent, RunEventType, RunStatus
@@ -39,6 +39,7 @@ from app.infrastructure.database.repositories.conversation_repository import (
 from app.infrastructure.database.repositories.run_repository import RunRepository
 from app.infrastructure.database.repositories.tool_repository import ToolRepository
 from app.infrastructure.logging_config import get_logger
+from app.infrastructure.temporal.errors import to_activity_error
 from app.workflows.contracts import RunAgentRequest
 
 logger = get_logger(__name__)
@@ -152,7 +153,13 @@ async def execute_agent(spec: dict[str, Any]) -> dict[str, Any]:
     deadline = Deadline.in_seconds(
         spec.get("timeout_seconds") or container.settings.agent_run_timeout_seconds
     )
-    result = await runner.run(request, deadline=deadline, emit=emit)
+    try:
+        result = await runner.run(request, deadline=deadline, emit=emit)
+    except AgentError as exc:
+        # The taxonomy must survive the activity boundary. Raising the raw error lets Temporal
+        # serialise it as a generic exception, so a rate limit would reach the workflow as
+        # `unexpected` and be retried blindly; an `ApplicationError` carries the classification.
+        raise to_activity_error(exc) from exc
     return result.model_dump(mode="json")
 
 
@@ -203,13 +210,13 @@ async def persist_run_result(payload: dict[str, Any]) -> dict[str, Any]:
             )
             if result.bot_proposal:
                 message.bot_proposal = AttachmentProposal(
-                    proposed=result.bot_proposal.as_payload,
+                    proposed=result.bot_proposal.to_frontend_payload,
                     is_confirmed=False,
                     code_snippet=result.bot_proposal.code_snippet,
                 )
             if result.tool_proposal:
                 message.tool_proposal = AttachmentProposal(
-                    proposed=result.tool_proposal.model_dump(mode="json", exclude={"code_snippet"}),
+                    proposed=result.tool_proposal.to_frontend_payload,
                     is_confirmed=False,
                     code_snippet=result.tool_proposal.code_snippet,
                 )
@@ -261,6 +268,30 @@ async def fail_run(payload: dict[str, Any]) -> dict[str, Any]:
 
         run = await runs.get(run_id)
         if run is not None:
+            # Finalise the assistant bubble with the classified failure, so the error the user sees
+            # during streaming survives a page reload (the run row alone does not carry the chat UI).
+            if run.assistant_message_id and run.conversation_id:
+                try:
+                    await ConversationRepository(session).update_message(
+                        Message(
+                            message_id=run.assistant_message_id,
+                            conversation_id=run.conversation_id,
+                            run_id=run_id,
+                            sender=Sender.BOT,
+                            content=failure.message,
+                            is_streaming=False,
+                        )
+                    )
+                except LookupError:
+                    logger.warning("assistant message missing on failure", extra={"run_id": run_id})
+                else:
+                    await append_event(
+                        runs,
+                        run_id,
+                        RunEventType.MESSAGE_COMPLETED,
+                        {"messageId": run.assistant_message_id},
+                    )
+
             bots = BotRepository(session)
             existing = await bots.get(run.bot_id, run.workspace_id)
             accumulator = BotMetricsAccumulator(existing.metrics if existing else None)
