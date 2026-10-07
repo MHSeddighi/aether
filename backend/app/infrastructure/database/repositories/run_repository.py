@@ -162,6 +162,8 @@ class RunRepository:
         else:
             seq = event.seq
 
+        # `ON CONFLICT DO NOTHING` without a target covers *every* unique constraint, so a replayed
+        # activity is a no-op whether it collides on the event id or on (run_id, seq).
         statement = (
             pg_insert(RunEventRow)
             .values(
@@ -172,10 +174,19 @@ class RunRepository:
                 data=event.data,
                 created_at=event.ts,
             )
-            .on_conflict_do_nothing(constraint="uq_run_events_run_id_seq")
+            .on_conflict_do_nothing()
         )
-        await self._session.execute(statement)
+        result = await self._session.execute(statement)
+        if result.rowcount == 0:
+            # A replay must report the sequence number that was actually stored.
+            existing = await self._event_row(event.event_id)
+            if existing is not None:
+                return event_to_domain(existing)
         return event.model_copy(update={"seq": seq})
+
+    async def _event_row(self, event_id: str) -> RunEventRow | None:
+        result = await self._session.execute(select(RunEventRow).where(RunEventRow.id == event_id))
+        return result.scalar_one_or_none()
 
     async def events(self, run_id: str, *, after_seq: int = 0, limit: int = 500) -> list[RunEvent]:
         result = await self._session.execute(

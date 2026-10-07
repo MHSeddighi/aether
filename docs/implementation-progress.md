@@ -46,6 +46,34 @@ Seven states implemented, tested and committed; each is a separate commit.
   idempotency cache keyed by `(run_id, tool_call_id)`; builtin handlers (`python_math` AST
   allow-list, `http_request`, `knowledge_search`).
 
+### Session 2 — 2026-10-07 (Docker fixed, full stack verified)
+
+Docker was pulling nothing because every registry answers this network's IPv6 with **HTTP 403**
+(Docker surfaces 403 as `RBAC: access denied`), while the host has global IPv6 addresses, so the
+daemon always chose the broken path. `"ipv6": false` in `daemon.json` only affects *container*
+networking. Fixed without root by pulling through IPv4-only registries and retagging
+(`scripts/pull-images.sh`), documented in `docs/running-locally.md` together with the permanent
+root-level fixes.
+
+What that unlocked, and what it found:
+
+* Full stack running: `postgres` + `temporal` + `api` + `worker-agent` (+ `worker-build` idle).
+  `/readyz` → `{"status":"ok","checks":{"postgres":true,"temporal":true}}`, agent worker connected to
+  `temporal:7233`.
+* **20 database integration tests now run for real** (they were skipped in session 1). They exposed:
+  * **production bug** — `RunRepository.append_event` used `ON CONFLICT DO NOTHING (run_id, seq)`,
+    so a replayed event with a fresh sequence number violated the `run_events` primary key instead of
+    being a no-op. Now conflicts on *any* constraint are ignored and the stored `seq` is read back.
+  * **production bug** — `/readyz` registered `_temporal_ping(settings)` (the coroutine) instead of a
+    callable, so the probe silently reported "degraded" forever. `ReadinessRegistry.register` now
+    rejects non-callables, with a test.
+  * test-isolation: rows leaked between tests (now `TRUNCATE … RESTART IDENTITY CASCADE` per test);
+    and a failed statement poisons a SQLAlchemy session, so tests now roll back explicitly.
+* Compose ports made configurable (default Postgres `55432`) because 5432/5433 are occupied here.
+* The app factory now registers its Postgres and Temporal readiness probes (States 1/3 completion).
+
+**Full suite with real Postgres + real Temporal + live provider: 276 passed, 0 skipped.**
+
 ### Verified live (real provider, real server)
 - `opencode/space-bunny-free` through the gateway: completion, tool calling, `json_schema`,
   streaming, catalogue — all pass.
@@ -57,13 +85,12 @@ Seven states implemented, tested and committed; each is a separate commit.
   JSONB round trip, clean downgrade.
 
 ### Known issues / environment limits
-- **Docker registry access is denied here** (`postgres:16-alpine`, `temporalio/auto-setup` both
-  fail with RBAC denial) and there is no root, so:
-  - `tests/integration/test_database.py` (20 tests) cannot run; it skips unless `TEST_DATABASE_URL`
-    is set. Its SQL was validated indirectly through the offline migration SQL above.
-  - The Temporal *dev server* (compose service) cannot start; the workflow tests instead use
-    Temporal's bundled time-skipping test environment, which works.
-  - The State 10 Docker sandbox cannot be exercised here at all.
+- Docker Hub is unusable over IPv6 on this network; the local stack works through
+  `scripts/pull-images.sh` + retags. Permanent fix needs root (see `docs/running-locally.md`).
+- The State 10 Docker sandbox cannot be exercised beyond `docker run` smoke tests here (no registry
+  access to pull a Python base image is now solved by the retags, but the sandbox tests still need
+  State 10 code).
+- `langgraph` should be pinned before release (see below).
 - `DEEPSEEK_API_KEY` was removed from `~/.bashrc` (backup `~/.bashrc.bak.20261007181139`) per
   request; the DeepSeek adapter is implemented and configured by URL only, with no key.
 - No `OPENROUTER_API_KEY` is configured anywhere in the backend (a key exists inside OpenCode's own
@@ -90,7 +117,7 @@ Seven states implemented, tested and committed; each is a separate commit.
    gateway needs no database access and the graph needs no tool registry.
 
 ### Next task
-**State 8 — Run API + cancellation + JWT auth.** Order of work:
+**State 8 — Run API + cancellation + JWT auth.** (unchanged; the stack it needs is now running) Order of work:
 1. `app/infrastructure/auth/jwt.py`: access/refresh tokens (HS256, `sub`, `workspace_id`, `exp`),
    argon2 password hashing.
 2. `app/application/{auth_service,bot_service,run_service,conversation_service}.py`: thin use cases
@@ -112,8 +139,11 @@ Seven states implemented, tested and committed; each is a separate commit.
 ### Useful commands
 ```bash
 cd backend
-uv run pytest -q                                   # unit suite (fast)
-TEMPORAL_TEST_SERVER=1 uv run pytest tests/integration/test_workflow.py   # real Temporal server
+../scripts/pull-images.sh                         # once, if Docker Hub is IPv6-blocked
+docker compose up -d && docker compose ps          # postgres(55432) + temporal(7233) + api + workers
+curl -s localhost:8000/readyz                      # postgres + temporal both true
+
+uv run pytest -q                                   # 276 tests with everything above running
+TEMPORAL_TEST_SERVER=1 uv run pytest tests/integration/test_workflow.py
 LIVE_PROVIDER=opencode LIVE_MODEL=space-bunny-free uv run pytest tests/integration/test_model_gateway_live.py
-RUN_INTEGRATION=1 ../scripts/init.sh test          # full suite with Postgres via docker compose
 ```

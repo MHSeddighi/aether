@@ -1,14 +1,17 @@
 # Local development stack: Postgres + Temporal server, API and workers.
 # No Redis, no RabbitMQ, no Celery, no Kubernetes (Rule 2).
+#
+# Host ports are overridable because 5432/5433 are already taken on some machines:
+#   POSTGRES_HOST_PORT=55432 TEMPORAL_HOST_PORT=17233 docker compose up -d
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: botbuilder
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-55432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +21,7 @@ services:
       retries: 20
 
   temporal:
-    image: temporalio/auto-setup:1.27.2
+    image: ${TEMPORAL_IMAGE:-temporalio/auto-setup:1.27.2}
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,7 +34,7 @@ services:
       DEFAULT_NAMESPACE: default
       VISIBILITY_DBNAME: temporal_visibility
     ports:
-      - "7233:7233"
+      - "${TEMPORAL_HOST_PORT:-7233}:7233"
 
   api:
     build:

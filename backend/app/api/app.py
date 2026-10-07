@@ -13,7 +13,9 @@ from app.api.errors import register_exception_handlers
 from app.api.middleware import RequestIdMiddleware
 from app.api.routes import health
 from app.infrastructure.config import Settings, get_settings
+from app.infrastructure.database.session import Database
 from app.infrastructure.logging_config import configure_logging, get_logger
+from app.infrastructure.temporal.client import connect
 
 logger = get_logger(__name__)
 
@@ -30,6 +32,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.readiness = health.ReadinessRegistry(checks={})
+    app.state.database = Database(settings)
+    _register_readiness_probes(app)
 
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(
@@ -49,7 +53,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
+def _register_readiness_probes(app: FastAPI) -> None:
+    """Each dependency registers its own check, so the route module stays infrastructure-free."""
+    app.state.readiness.register("postgres", app.state.database.ping)
+    settings = app.state.settings
+    app.state.readiness.register("temporal", lambda: _temporal_ping(settings))
+
+
+async def _temporal_ping(settings: Settings) -> bool:
+    try:
+        client = await connect(settings)
+        await client.service_client.check_health()
+        return True
+    except Exception:
+        logger.warning("temporal ping failed", exc_info=True)
+        return False
+
+
 def _register_routers(app: FastAPI, settings: Settings) -> None:
-    """Feature routers are registered here as their state lands (States 2, 3, 8, 9)."""
-    del app, settings  # nothing to register yet; kept as the single wiring point
-    return
+    """Feature routers are registered here as their state lands (State 8: auth, bots, runs, SSE)."""
+    del app, settings  # kept as the single wiring point

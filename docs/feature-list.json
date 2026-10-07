@@ -127,9 +127,10 @@
         "bot_versions rows cannot be updated (trigger or guard)",
         "run_events (run_id, seq) unique",
         "runs reference an immutable bot_version_id and captured model config",
-        "verified in this environment by applying the generated migration SQL to a real Postgres engine (PGlite 0.5.8 / PG 18 WASM) because the Docker registry is unreachable here"
+        "verified in this environment by applying the generated migration SQL to a real Postgres engine (PGlite 0.5.8 / PG 18 WASM) because the Docker registry is unreachable here",
+        "20 database integration tests now execute against the compose Postgres: migration up/down, repository round trips, workspace scoping, append-only version trigger, gap-free run_events sequence allocation and idempotent appends"
       ],
-      "notes": "tests/integration/test_database.py is written and gated on TEST_DATABASE_URL; run with ./scripts/init.sh migrate && RUN_INTEGRATION=1 ./scripts/init.sh test"
+      "notes": "run with TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/botbuilder_test; see docs/running-locally.md for the Docker/IPv6 workaround needed on this network"
     },
     {
       "id": "bot-service",
@@ -173,7 +174,8 @@
         "activity timeout is enforced",
         "permanent failures are marked non-retryable",
         "13 workflow tests pass against a real Temporal server (time-skipping test environment), covering success, retryable vs non-retryable retries, load/persist failures, cancellation and workflow-id idempotency"
-      ]
+      ],
+      "notes": "13 workflow tests pass against Temporal's time-skipping test environment, and the compose temporalio/auto-setup server is verified via /readyz and a connected agent worker"
     },
     {
       "id": "run-workflow",

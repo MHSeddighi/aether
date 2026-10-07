@@ -22,6 +22,9 @@ class ReadinessRegistry:
     checks: dict[str, ReadinessCheck]
 
     def register(self, name: str, check: ReadinessCheck) -> None:
+        # A coroutine object here would be silently awaited-and-failed later; reject it now.
+        if not callable(check):
+            raise TypeError(f"readiness check {name!r} must be callable, got {type(check).__name__}")
         self.checks[name] = check
 
     async def run(self) -> dict[str, bool]:

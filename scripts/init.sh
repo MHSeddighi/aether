@@ -8,19 +8,21 @@
 #   ./scripts/init.sh reset     # stop and delete volumes
 set -euo pipefail
 
-BACKEND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../backend" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$SCRIPT_DIR/../backend"
 cd "$BACKEND_DIR"
 
 [ -f .env ] || cp .env.example .env
 
-TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgresql+asyncpg://postgres:postgres@localhost:5432/botbuilder_test}"
+TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgresql+asyncpg://postgres:postgres@localhost:55432/botbuilder_test}"
 
 case "${1:-up}" in
   up)
+    "$SCRIPT_DIR/pull-images.sh"   # no-op when the images are already present
     docker compose up -d --build
     echo "api        -> http://localhost:8000/docs"
-    echo "postgres   -> localhost:5432"
-    echo "temporal   -> localhost:7233"
+    echo "postgres   -> localhost:${POSTGRES_HOST_PORT:-55432}"
+    echo "temporal   -> localhost:${TEMPORAL_HOST_PORT:-7233}"
     echo
     echo "Now run: $0 migrate"
     ;;

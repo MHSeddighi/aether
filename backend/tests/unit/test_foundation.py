@@ -6,6 +6,7 @@ import json
 import logging
 
 import pytest
+from app.api.app import create_app
 from app.api.errors import ApiError, ConflictError, NotFoundError
 from app.api.routes import health
 from app.domain.ids import new_id
@@ -80,6 +81,33 @@ class TestAppFactory:
         assert supplied == "req_fixed"
 
 
+class TestReadinessRegistry:
+    async def test_registering_a_coroutine_object_is_rejected(self) -> None:
+        """Guards against passing `_ping()` instead of `_ping` — a silent 'always degraded' bug."""
+
+        async def ping() -> bool:
+            return True
+
+        registry = health.ReadinessRegistry(checks={})
+        unawaited = ping()
+        try:
+            with pytest.raises(TypeError, match="must be callable"):
+                registry.register("temporal", unawaited)
+        finally:
+            unawaited.close()  # the guard rejected it; close so no "never awaited" warning
+        registry.register("temporal", ping)
+        assert await registry.run() == {"temporal": True}
+
+    async def test_registry_defaults_to_ready(self) -> None:
+        registry = health.ReadinessRegistry(checks={})
+        assert await registry.run() == {}
+
+    def test_api_registers_both_probes_as_callables(self) -> None:
+        app = create_app(Settings(_env_file=None, log_level="WARNING"))
+        assert set(app.state.readiness.checks) == {"postgres", "temporal"}
+        assert all(callable(c) for c in app.state.readiness.checks.values())
+
+
 class TestErrorEnvelope:
     def test_unknown_route_uses_envelope(self, client: TestClient) -> None:
         response = client.get("/nope")
@@ -128,9 +156,3 @@ class TestIds:
         assert first.startswith("run_") and second.startswith("run_")
         assert first != second
         assert len(first) == len("run_") + 26
-
-
-class TestReadinessRegistry:
-    async def test_registry_defaults_to_ready(self) -> None:
-        registry = health.ReadinessRegistry(checks={})
-        assert await registry.run() == {}

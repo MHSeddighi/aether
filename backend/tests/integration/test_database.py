@@ -91,7 +91,7 @@ class TestBotRepository:
             version=make_version(bot, bot.version, "ver_2", datetime.now(UTC)),
             notes="Tightened instructions",
         )
-        assert [v.version for v in updated.versions] == ["1.3.0", "1.2.0"]
+        assert [v.version for v in updated.versions] == ["1.1.0", "1.0.0"]
 
         versions = await repo.versions("bot_1", "ws_test")
         assert [v.notes for v in versions] == ["Tightened instructions", "Initial version"]
@@ -103,13 +103,17 @@ class TestBotRepository:
         await seed_workspace(session)
         bot = make_bot("ws_test", "bot_1")
         await BotRepository(session).add(bot, version=make_version(bot, "1.0.0", "ver_1", datetime.now(UTC)))
+        await session.commit()  # the violation below must not roll the setup rows back
         row = await session.get(BotVersionRow, "ver_1")
         row.notes = "tampered"
         with pytest.raises(DBAPIError, match="immutable"):
             await session.commit()
+        await session.rollback()  # the failed statement poisons the transaction
+        assert (await session.get(BotVersionRow, "ver_1")).notes == "Initial version"
 
     async def test_workspace_scoping(self, session) -> None:
         await seed_workspace(session, "ws_other")
+        await seed_workspace(session, "ws_test")
         repo = BotRepository(session)
         bot = make_bot("ws_test", "bot_1")
         await repo.add(bot, version=make_version(bot, "1.0.0", "ver_1", datetime.now(UTC)))
@@ -221,7 +225,7 @@ class TestRunRepository:
         replay = await repo.append_event(
             RunEvent(event_id="evt_1", run_id="run_1", seq=1, type=RunEventType.RUN_STARTED)
         )
-        assert first.seq == replay.seq
+        assert first.seq == replay.seq, "a replay must report the sequence number that was stored"
         assert len(await repo.events("run_1")) == 1
 
     async def test_deltas_are_never_persisted(self, session) -> None:
@@ -383,6 +387,7 @@ class TestAccountRepository:
                     password_hash="argon2$hash",
                 )
             )
+        await session.rollback()  # the unique violation poisons the transaction
 
     async def test_usage_counters_increase(self, session) -> None:
         await seed_workspace(session)

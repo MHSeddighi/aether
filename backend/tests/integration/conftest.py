@@ -51,6 +51,15 @@ async def database() -> AsyncIterator[Database]:
 
 @pytest_asyncio.fixture
 async def session(database: Database) -> AsyncIterator:
+    """A clean database per test: the migration runs once per session, rows do not survive."""
+    async with database.engine.begin() as connection:
+        await connection.execute(
+            text(
+                "TRUNCATE users, workspaces, runs, run_events, messages, "
+                "conversations, bots, bot_versions, tools, tool_versions, "
+                "knowledge_sources, files, artifacts RESTART IDENTITY CASCADE"
+            )
+        )
     async with database.session() as active:
         yield active
 
