@@ -20,7 +20,7 @@
     {
       "id": 3,
       "name": "temporal-foundation",
-      "status": "pending"
+      "status": "passing"
     },
     {
       "id": 4,
@@ -166,12 +166,13 @@
     {
       "id": "temporal-foundation",
       "description": "Temporal client + worker bootstrap, task queues, workflow sandbox-safe logger, activity error classification",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "worker registers activities and workflows",
         "temporary test environment executes a trivial workflow",
         "activity timeout is enforced",
-        "permanent failures are marked non-retryable"
+        "permanent failures are marked non-retryable",
+        "13 workflow tests pass against a real Temporal server (time-skipping test environment), covering success, retryable vs non-retryable retries, load/persist failures, cancellation and workflow-id idempotency"
       ]
     },
     {
@@ -184,7 +185,8 @@
         "agent failure persists failure classification and run status",
         "cancellation results in run status cancelled",
         "workflow is deterministic under replay of history"
-      ]
+      ],
+      "notes": "workflow + activities implemented and tested; the agent bots still run DeterministicRunner only, so the LangGraph path (State 5) and API start path (State 8) are still pending"
     },
     {
       "id": "model-gateway",

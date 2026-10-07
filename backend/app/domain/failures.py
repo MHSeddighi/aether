@@ -60,9 +60,11 @@ _RETRYABLE: frozenset[FailureReason] = frozenset(
         FailureReason.TOOL_TIMEOUT,
         FailureReason.TOOL_UNAVAILABLE,
         FailureReason.DEADLINE_EXCEEDED,
-        FailureReason.UNEXPECTED,
     }
 )
+
+#: An unclassified error is a defect, not a blip: retrying it only hides the defect.
+_NOT_RETRYABLE: frozenset[FailureReason] = frozenset({FailureReason.UNEXPECTED})
 
 # Reasons a bounded repair pass can fix by asking the model again.
 _REPAIRABLE: frozenset[FailureReason] = frozenset(
@@ -104,6 +106,8 @@ class AgentError(Exception):
     def retryable(self) -> bool:
         if self._retryable_override is not None:
             return self._retryable_override
+        if self.reason in _NOT_RETRYABLE:
+            return False
         return self.reason in _RETRYABLE
 
     @property
@@ -135,6 +139,12 @@ class ValidationFailure(AgentError):
 
 class ToolFailure(AgentError):
     kind = FailureKind.TOOL
+
+
+class InternalFailure(AgentError):
+    """A bug or an unclassified condition. Never retried: blind retries only hide defects."""
+
+    kind = FailureKind.INTERNAL
 
 
 class SecurityFailure(AgentError):

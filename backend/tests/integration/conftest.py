@@ -6,8 +6,8 @@ Run with:
     uv run pytest -m integration
 
 `scripts/init.sh` brings up Postgres + Temporal via docker compose and creates that database.
-Tests are skipped (not failed) when no database is configured, so the unit suite stays green on a
-machine without Postgres.
+Database tests skip (not fail) when TEST_DATABASE_URL is unset, so the suite stays green on a machine
+without Postgres. Workflow tests use Temporal's time-skipping test environment and need no database.
 """
 
 from __future__ import annotations
@@ -28,29 +28,22 @@ TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 
-def pytest_collection_modifyitems(items):
-    if TEST_DATABASE_URL:
+@pytest.fixture(scope="session", autouse=True)
+def migrated_database() -> None:
+    """Apply the real Alembic migrations once, so the tests also exercise them (triggers included)."""
+    if not TEST_DATABASE_URL:
         return
-    skip = pytest.mark.skip(reason="TEST_DATABASE_URL is not set")
-    for item in items:
-        if "integration" in item.keywords:
-            item.add_marker(skip)
-
-
-@pytest_asyncio.fixture(scope="session")
-def migrated_database_url() -> str:
-    """Apply the real Alembic migrations, so the tests also exercise them (triggers included)."""
-    url = TEST_DATABASE_URL or ""
     config = Config(str(ALEMBIC_INI))
-    config.set_main_option("sqlalchemy.url", url)
+    config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
     command.downgrade(config, "base")
     command.upgrade(config, "head")
-    return url
 
 
 @pytest_asyncio.fixture
-async def database(migrated_database_url: str) -> AsyncIterator[Database]:
-    settings = Settings(environment="test", database_url=migrated_database_url)
+async def database() -> AsyncIterator[Database]:
+    if not TEST_DATABASE_URL:
+        pytest.skip("TEST_DATABASE_URL is not set")
+    settings = Settings(environment="test", database_url=TEST_DATABASE_URL)
     db = Database(settings)
     yield db
     await db.dispose()
