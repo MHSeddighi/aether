@@ -5,6 +5,8 @@ One place that knows how to reach Temporal; everything else receives a connected
 
 from __future__ import annotations
 
+import asyncio
+
 from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 
@@ -43,3 +45,37 @@ async def connect(settings: Settings) -> Client:
         extra={"host": settings.temporal_host, "namespace": settings.temporal_namespace},
     )
     return client
+
+
+class TemporalConnection:
+    """Lazily connects one client per process and reuses it.
+
+    The API is the only long-lived Temporal user in the control plane, and opening a client per
+    request would add a gRPC handshake to every `POST /runs`. The lock makes the first concurrent
+    requests wait for a single connect instead of racing.
+    """
+
+    __slots__ = ("_client", "_lock", "_settings")
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._client: Client | None = None
+        self._lock = asyncio.Lock()
+
+    async def get(self) -> Client:
+        if self._client is not None:
+            return self._client
+        async with self._lock:
+            if self._client is None:
+                self._client = await connect(self._settings)
+        return self._client
+
+    async def ping(self) -> bool:
+        client = await self.get()
+        await client.service_client.check_health()
+        return True
+
+    async def aclose(self) -> None:
+        client, self._client = self._client, None
+        if client is not None:
+            await client.close()

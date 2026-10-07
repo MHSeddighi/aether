@@ -6,18 +6,41 @@ and injected, so tests can build an app with fakes.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_exception_handlers
 from app.api.middleware import RequestIdMiddleware
-from app.api.routes import health
+from app.api.routes import (
+    auth,
+    bots,
+    conversations,
+    health,
+    knowledge,
+    models,
+    runs,
+    tools,
+)
 from app.infrastructure.config import Settings, get_settings
 from app.infrastructure.database.session import Database
 from app.infrastructure.logging_config import configure_logging, get_logger
-from app.infrastructure.temporal.client import connect
+from app.infrastructure.temporal.client import TemporalConnection
 
 logger = get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Own the process-wide connections and close them on shutdown."""
+    connection: TemporalConnection = app.state.temporal
+    try:
+        yield
+    finally:
+        await app.state.database.dispose()
+        await connection.aclose()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -29,10 +52,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="0.1.0",
         docs_url="/docs",
         openapi_url="/openapi.json",
+        lifespan=lifespan,
     )
     app.state.settings = settings
     app.state.readiness = health.ReadinessRegistry(checks={})
     app.state.database = Database(settings)
+    # One lazily-connected Temporal client per process: `POST /runs` needs it on every call, so it
+    # must not reconnect each time (Rule 14).
+    app.state.temporal = TemporalConnection(settings)
     _register_readiness_probes(app)
 
     app.add_middleware(RequestIdMiddleware)
@@ -56,14 +83,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 def _register_readiness_probes(app: FastAPI) -> None:
     """Each dependency registers its own check, so the route module stays infrastructure-free."""
     app.state.readiness.register("postgres", app.state.database.ping)
-    settings = app.state.settings
-    app.state.readiness.register("temporal", lambda: _temporal_ping(settings))
+    app.state.readiness.register("temporal", lambda: _temporal_ping(app))
 
 
-async def _temporal_ping(settings: Settings) -> bool:
+async def _temporal_ping(app: FastAPI) -> bool:
     try:
-        client = await connect(settings)
-        await client.service_client.check_health()
+        await app.state.temporal.ping()
         return True
     except Exception:
         logger.warning("temporal ping failed", exc_info=True)
@@ -71,5 +96,7 @@ async def _temporal_ping(settings: Settings) -> bool:
 
 
 def _register_routers(app: FastAPI, settings: Settings) -> None:
-    """Feature routers are registered here as their state lands (State 8: auth, bots, runs, SSE)."""
-    del app, settings  # kept as the single wiring point
+    """Every router the product exposes, mounted under the versioned prefix."""
+    for module in (auth, bots, tools, knowledge, conversations, runs, models):
+        app.include_router(module.router, prefix=settings.api_prefix)
+    logger.info("routers registered", extra={"prefix": settings.api_prefix, "count": 7})

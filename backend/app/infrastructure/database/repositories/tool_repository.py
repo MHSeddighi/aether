@@ -137,6 +137,9 @@ class ToolRepository:
         row.config = tool.config
         if version is not None:
             row.version = version.version
+            # The aggregate's own pointer moves with the row, otherwise the response would report a
+            # stale version while the database already has the new one.
+            tool.version = version.version
             self._session.add(self._version_row(tool, version))
             tool.versions = [version, *previous_versions]
         await self._session.flush()

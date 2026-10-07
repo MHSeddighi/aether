@@ -7,6 +7,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
+    "email-validator>=2.2",  # pydantic EmailStr
     "pydantic-settings>=2.6",
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30",
@@ -18,6 +19,7 @@ dependencies = [
     "argon2-cffi>=23.1",
     "langgraph>=0.2.50",
     "sse-starlette>=2.1",
+    "python-multipart>=0.0.12",  # FastAPI multipart uploads (/knowledge)
     "jsonschema>=4.26.0",
 ]
 

@@ -10,10 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.contracts import AgentResult
 from app.domain.bots import BotType
+from app.domain.conversations import HISTORY_WINDOW
 from app.domain.models import ModelConfig
 from app.domain.tools import ToolPermission
 
-MAX_HISTORY_MESSAGES = 20
+#: The activity truncates whatever history it is given to this window; the API selects it using the
+#: same constant, so the two halves can never disagree about how much context a run carries.
+MAX_HISTORY_MESSAGES = HISTORY_WINDOW
 
 
 class ConversationTurn(BaseModel):

@@ -169,3 +169,13 @@ class ConversationRepository:
             return False
         await self._session.delete(row)
         return True
+
+    async def get_message(self, message_id: str, workspace_id: str) -> Message | None:
+        """Load one message, scoped through its conversation so ids cannot be guessed across tenants."""
+        result = await self._session.execute(
+            select(MessageRow)
+            .join(ConversationRow, ConversationRow.id == MessageRow.conversation_id)
+            .where(MessageRow.id == message_id, ConversationRow.workspace_id == workspace_id)
+        )
+        row = result.scalar_one_or_none()
+        return message_to_domain(row) if row else None

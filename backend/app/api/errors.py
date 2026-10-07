@@ -13,9 +13,10 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError as PydanticValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.domain.failures import AgentError
+from app.domain.failures import AgentError, ValidationFailure
 from app.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -79,6 +80,20 @@ class UnauthorizedError(ApiError):
         )
 
 
+class ForbiddenError(ApiError):
+    def __init__(self, message: str = "operation not permitted") -> None:
+        super().__init__(403, ErrorCode.FORBIDDEN, message)
+
+
+class AuthenticationRequired(Exception):
+    """The bearer token is missing, malformed, expired or otherwise unusable.
+
+    Deliberately a single exception for every failure mode: the client must not learn *why* a token
+    stopped working (expired vs. revoked vs. wrong workspace). Raised by the auth dependency and
+    rendered here.
+    """
+
+
 def _error_response(
     request: Request,
     *,
@@ -126,12 +141,52 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(AgentError)
     async def _agent_error(request: Request, exc: AgentError) -> JSONResponse:
+        """A classified failure escaping a use case.
+
+        A `ValidationFailure` here came from an invariant, i.e. bad client input, so it is a 422.
+        Every other kind is a genuine server-side or agent-side fault and stays a 500 carrying the
+        full classification (Rule 19/20) rather than a bare error.
+        """
+        client_fault = isinstance(exc, ValidationFailure)
         return _error_response(
             request,
-            status_code=500,
-            code=ErrorCode.AGENT_FAILURE,
+            status_code=422 if client_fault else 500,
+            code=ErrorCode.VALIDATION_ERROR if client_fault else ErrorCode.AGENT_FAILURE,
             message=exc.message,
             details=exc.to_dict(),
+        )
+
+    @app.exception_handler(PydanticValidationError)
+    async def _domain_validation(request: Request, exc: PydanticValidationError) -> JSONResponse:
+        """A domain invariant violated inside a use case.
+
+        The domain models raise `ValueError` (pydantic turns it into `ValidationError`) for things the
+        request schema cannot know — an agent bot with a deterministic provider, an http tool with no
+        network permission. Those are client input problems, so they are 422s, not 500s.
+        """
+        return _error_response(
+            request,
+            status_code=422,
+            code=ErrorCode.VALIDATION_ERROR,
+            message="the request does not satisfy the domain invariants",
+            details={"errors": json.loads(json.dumps(exc.errors(include_url=False), default=str))},
+        )
+
+    @app.exception_handler(AuthenticationRequired)
+    async def _auth_required(request: Request, exc: AuthenticationRequired) -> JSONResponse:
+        """Every auth failure — missing, malformed, expired, revoked — is one 401 envelope.
+
+        The dependency layer raises a single exception on purpose: the client must not be able to
+        distinguish "your token expired" from "your token is for a workspace you left", and the log
+        keeps the detail.
+        """
+        logger.info("authentication rejected", extra={"reason": str(exc)})
+        return _error_response(
+            request,
+            status_code=401,
+            code=ErrorCode.UNAUTHORIZED,
+            message=str(exc) or "authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     @app.exception_handler(StarletteHTTPException)

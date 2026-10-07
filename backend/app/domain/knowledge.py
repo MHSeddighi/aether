@@ -82,7 +82,9 @@ class KnowledgeSource(BaseModel):
     type: KnowledgeType = KnowledgeType.TEXT
     files: list[FileBlob] = Field(default_factory=list)
     status: KnowledgeStatus = KnowledgeStatus.UPLOADING
-    progress_percent: int = Field(default=0, ge=0, le=100)
+    #: Starts at the `UPLOADING` progress the frontend paints immediately
+    #: (`KnowledgeWorkspace.tsx:122`); later values come from `_default_progress`.
+    progress_percent: int = Field(default=20, ge=0, le=100)
     chunks_count: int = 0
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

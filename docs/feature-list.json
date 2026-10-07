@@ -1,6 +1,6 @@
 {
   "project": "bot-builder-backend",
-  "updated": "2026-10-07 (session 1)",
+  "updated": "2026-10-07 (session 3: state 8)",
   "states": [
     {
       "id": 0,
@@ -45,7 +45,7 @@
     {
       "id": 8,
       "name": "run-api-and-cancellation",
-      "status": "pending"
+      "status": "passing"
     },
     {
       "id": 9,
@@ -97,14 +97,16 @@
     {
       "id": "jwt-auth",
       "description": "Register/login/refresh with hashed passwords; user + workspace rows; workspace-scoped access",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "register creates user + workspace and returns access/refresh tokens",
-        "duplicate email rejected",
+        "duplicate email rejected (409)",
         "wrong password rejected with 401",
-        "expired/invalid token rejected",
-        "protected route without token returns 401",
-        "cross-workspace access returns 404"
+        "expired/invalid/forged/alg:none token rejected",
+        "protected route without token returns 401 (every route is parameterised)",
+        "cross-workspace access returns 404",
+        "a token cannot outlive its user's workspace membership",
+        "a refresh token cannot be used as an access token"
       ]
     },
     {
@@ -135,7 +137,7 @@
     {
       "id": "bot-service",
       "description": "Create/list/get/patch/soft-delete bots; PATCH appends a new immutable version",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "create returns BotItem shape with version 1.0.0",
         "patch appends a version and does not mutate history",
@@ -146,7 +148,7 @@
     {
       "id": "tool-service",
       "description": "Tool + ToolVersion CRUD with schemas, timeout, permissions",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "tool versions are immutable",
         "invalid input_schema rejected",
@@ -156,13 +158,14 @@
     {
       "id": "knowledge-ingestion",
       "description": "Multipart upload creates File + KnowledgeSource rows with status Uploading; indexing advanced by a Temporal workflow",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "upload returns 202 with Uploading items",
         "indexing workflow advances Processing -> Indexing -> Ready",
         "failure marks Failed with error detail",
         "files are stored outside the database on a data volume"
-      ]
+      ],
+      "notes": "upload/list/rename/delete are implemented and tested; status is advanced by IndexKnowledgeWorkflow (a later state). Bytes live on the data volume, rows in Postgres."
     },
     {
       "id": "temporal-foundation",
@@ -213,7 +216,8 @@
         "catalog reads provider /models endpoint when reachable",
         "unreachable provider degrades to the configured fallback list",
         "GET /models returns provider, model_id, label, free flag"
-      ]
+      ],
+      "notes": "GET /models and GET /models/default are routed and authenticated; the catalogue itself was verified in session 1."
     },
     {
       "id": "langgraph-agent",
@@ -257,7 +261,7 @@
     {
       "id": "run-api",
       "description": "POST /runs starts a workflow and returns run_id; GET /runs/{id}; POST /runs/{id}/cancel",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "POST /runs returns 202 with run_id and queued status",
         "GET /runs returns captured provider/model config",
@@ -269,7 +273,7 @@
     {
       "id": "conversation-api",
       "description": "Conversation + message endpoints mirroring ChatConversation/ChatMessage",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "list returns metadata without messages",
         "detail returns full message list",

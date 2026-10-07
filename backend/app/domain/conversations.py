@@ -30,6 +30,11 @@ class HistoryCategory(StrEnum):
     OLDER = "older"
 
 
+#: How many prior turns are handed to the agent. One constant, shared by the API (which selects the
+#: history) and the activity (which truncates it), so the two can never disagree.
+HISTORY_WINDOW = 20
+
+
 class ToolActivityStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
