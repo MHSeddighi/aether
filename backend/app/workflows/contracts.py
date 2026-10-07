@@ -20,6 +20,8 @@ class RunAgentRequest:
     assistant_message_id: str | None = None
     history: tuple[tuple[str, str], ...] = ()
     attachments: tuple[dict, ...] = ()
+    #: `chat` | `build_bot` | `build_tool`, derived from the conversation mode at the API edge.
+    intent: str = "chat"
     timeout_seconds: float = 180.0
 
 

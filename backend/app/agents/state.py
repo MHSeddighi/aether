@@ -49,3 +49,7 @@ class AgentState(TypedDict, total=False):
     final_text: str
     stop_reason: str
     last_error: str | None
+    #: A validated `BotProposal`/`ToolProposal` (Rule 21). Present only on the building paths.
+    proposal: dict[str, Any] | None
+    #: How many times the bounded repair loop had to re-ask the model (Rule 23).
+    repairs: int

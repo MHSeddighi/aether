@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import BinaryIO, Protocol
 
+from app.application.ports import KnowledgeStarter
 from app.domain.ids import new_id
 from app.domain.knowledge import KB_DIR, FileBlob, KnowledgeSource, KnowledgeType
 from app.infrastructure.logging_config import get_logger
@@ -92,9 +93,16 @@ class LocalBlobStore:
 
 
 class KnowledgeService:
-    def __init__(self, knowledge: KnowledgeRepositoryPort, blobs: BlobStorePort) -> None:
+    def __init__(
+        self,
+        knowledge: KnowledgeRepositoryPort,
+        blobs: BlobStorePort,
+        starter: KnowledgeStarter | None = None,
+    ) -> None:
         self._knowledge = knowledge
         self._blobs = blobs
+        # Optional so unit tests can exercise ingestion without Temporal (Rule 38).
+        self._starter = starter
 
     async def list(self, workspace_id: str) -> list[KnowledgeSource]:
         return await self._knowledge.list(workspace_id)
@@ -151,6 +159,17 @@ class KnowledgeService:
                 )
             )
             sources.append(source)
+        # Indexing is durable work owned by Temporal, not the request. Starting it here keeps the
+        # HTTP response immediate while guaranteeing the source is eventually indexed (Rule 14).
+        if self._starter is not None:
+            from app.infrastructure.temporal.knowledge_starter import knowledge_workflow_id
+            from app.workflows.contracts import IndexKnowledgeRequest
+
+            for source in sources:
+                await self._starter.start(
+                    IndexKnowledgeRequest(source_id=source.source_id, workspace_id=source.workspace_id),
+                    workflow_id=knowledge_workflow_id(source.source_id),
+                )
         return sources
 
     async def rename(self, workspace_id: str, source_id: str, name: str) -> KnowledgeSource:

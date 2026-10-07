@@ -18,11 +18,26 @@ from datetime import timedelta
 
 from temporalio.worker import Worker
 
+from app.activities.build import (
+    docker_build,
+    generate_code,
+    load_build_spec,
+    persist_checkpoint,
+    publish_artifact,
+    sandbox_test,
+    validate_code,
+)
 from app.activities.container import (
     ActivityContainer,
     ModelClientBuilder,
     ToolExecutorBuilder,
     install,
+)
+from app.activities.knowledge import (
+    advance_knowledge_status,
+    index_knowledge_source,
+    load_knowledge_source,
+    process_knowledge_source,
 )
 from app.activities.persistence import (
     cancel_run,
@@ -38,6 +53,8 @@ from app.infrastructure.logging_config import configure_logging, get_logger
 from app.infrastructure.models.gateway import build_model_client
 from app.infrastructure.temporal.client import connect
 from app.tools.gateway import build_tool_gateway
+from app.workflows.build_bot import BuildBotWorkflow
+from app.workflows.index_knowledge import IndexKnowledgeWorkflow
 from app.workflows.run_agent import RunAgentWorkflow
 
 logger = get_logger(__name__)
@@ -49,6 +66,23 @@ AGENT_ACTIVITIES = [
     persist_run_result,
     fail_run,
     cancel_run,
+]
+
+BUILD_ACTIVITIES = [
+    load_build_spec,
+    generate_code,
+    validate_code,
+    docker_build,
+    sandbox_test,
+    publish_artifact,
+    persist_checkpoint,
+]
+
+KNOWLEDGE_ACTIVITIES = [
+    load_knowledge_source,
+    process_knowledge_source,
+    index_knowledge_source,
+    advance_knowledge_status,
 ]
 
 
@@ -63,21 +97,22 @@ class WorkerRole:
 
 
 def agent_role(settings: Settings) -> WorkerRole:
+    """Agent worker: run workflows plus knowledge indexing (both are fast, CPU-light operations)."""
     return WorkerRole(
         name="agent",
         task_queues=[settings.temporal_task_queue],
-        workflows=[RunAgentWorkflow],
-        activities=AGENT_ACTIVITIES,
+        workflows=[RunAgentWorkflow, IndexKnowledgeWorkflow],
+        activities=AGENT_ACTIVITIES + KNOWLEDGE_ACTIVITIES,
     )
 
 
 def build_role(settings: Settings) -> WorkerRole:
-    """Build worker. Its activities arrive with State 10 (BuildBotWorkflow); it polls meanwhile."""
+    """Build worker. Polls the build task queue with BuildBotWorkflow and its activities."""
     return WorkerRole(
         name="build",
         task_queues=[settings.temporal_build_task_queue],
-        workflows=[],
-        activities=[],
+        workflows=[BuildBotWorkflow],
+        activities=BUILD_ACTIVITIES,
     )
 
 

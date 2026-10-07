@@ -19,8 +19,10 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from app.agents.contracts import AgentResult, AgentUsage
+from app.agents.contracts import AgentResult, AgentUsage, BotProposal, ToolProposal
 from app.agents.prompts import build_system_prompt
+from app.agents.proposal import ProposalGenerator, _as_schema
+from app.agents.repair import DEFAULT_MAX_REPAIRS
 from app.agents.request import AgentEvent, AgentRequest
 from app.agents.state import STOP_MAX_STEPS, STOP_NO_TOOLS, AgentState
 from app.domain.conversations import ToolActivity, ToolActivityStatus
@@ -57,10 +59,12 @@ class LangGraphRunner:
         *,
         tool_executor: ToolExecutor | None = None,
         stream: bool = True,
+        max_repairs: int | None = None,
     ) -> None:
         self._client = model_client
         self._tool_executor = tool_executor
         self._stream = stream
+        self._max_repairs = DEFAULT_MAX_REPAIRS if max_repairs is None else max_repairs
 
     async def run(self, request: AgentRequest, *, deadline: Deadline, emit) -> AgentResult:
         graph = self._build_graph(request, deadline, emit)
@@ -72,25 +76,35 @@ class LangGraphRunner:
             "pending_tool_calls": [],
         }
         final = await graph.ainvoke(initial)
-        return self._to_result(final)
+        return self._to_result(request, final)
 
     # --- graph ------------------------------------------------------------
 
     def _build_graph(self, request: AgentRequest, deadline: Deadline, emit):
+        proposes = self._proposes(request)
         builder = StateGraph(AgentState)
         builder.add_node("plan", self._plan_node(request, deadline, emit))
         builder.add_node("act", self._act_node(request, deadline, emit))
+        if proposes:
+            builder.add_node("propose", self._propose_node(request, deadline))
         builder.add_node("finalize", self._finalize_node(emit))
 
         builder.add_edge(START, "plan")
         builder.add_conditional_edges(
             "plan",
             self._route_after_plan,
-            {"tools": "act", "done": "finalize"},
+            {"tools": "act", "done": "propose" if proposes else "finalize"},
         )
         builder.add_edge("act", "plan")
+        if proposes:
+            # Tools may inform the proposal (the model can search before it designs), so the propose
+            # node runs after the reasoning loop, not instead of it.
+            builder.add_edge("propose", "finalize")
         builder.add_edge("finalize", END)
         return builder.compile()
+
+    def _proposes(self, request: AgentRequest) -> bool:
+        return request.intent in {"build_bot", "build_tool"}
 
     def _route_after_plan(self, state: AgentState) -> str:
         if state.get("pending_tool_calls"):
@@ -188,12 +202,48 @@ class LangGraphRunner:
                     data={
                         "steps": state.get("steps", 0),
                         "toolCalls": len(state.get("tool_results") or []),
+                        "proposed": bool(state.get("proposal")),
                     },
                 )
             )
             return {"final_text": state.get("final_text", "")}
 
         return finalize
+
+    def _propose_node(self, request: AgentRequest, deadline: Deadline):
+        """Generate the structured proposal, with a bounded repair loop (Rule 23).
+
+        Nothing reaches `AgentState` until it has passed schema *and* business-constraint
+        validation, so no downstream node ever sees raw model JSON (Rule 21).
+        """
+
+        async def propose(_state: AgentState) -> dict[str, Any]:
+            generator = ProposalGenerator(self._client, max_repairs=self._max_repairs)
+            known_tools = tuple(spec.tool_id for spec in request.tools)
+            if request.intent == "build_tool":
+                outcome = await generator.tool_proposal(
+                    message=request.message,
+                    instructions=request.instructions,
+                    model=request.model,
+                    deadline=deadline,
+                )
+                proposal = outcome.value
+            else:
+                outcome = await generator.bot_proposal(
+                    message=request.message,
+                    instructions=request.instructions,
+                    model=request.model,
+                    deadline=deadline,
+                    known_tool_ids=known_tools,
+                    known_knowledge_ids=tuple(request.knowledge),
+                )
+                proposal = outcome.value
+            payload = (
+                proposal.as_payload if isinstance(proposal, BotProposal) else proposal.model_dump(mode="json")
+            )
+            return {"proposal": payload, "repairs": outcome.repairs}
+
+        return propose
 
     # --- model and tool calls ---------------------------------------------
 
@@ -281,7 +331,7 @@ class LangGraphRunner:
         messages.append(user_message(request.message))
         return messages
 
-    def _to_result(self, state: AgentState) -> AgentResult:
+    def _to_result(self, request: AgentRequest, state: AgentState) -> AgentResult:
         usage = state.get("usage") or {}
         activities = [
             ToolActivity(
@@ -292,9 +342,16 @@ class LangGraphRunner:
             )
             for item in state.get("tool_results") or []
         ]
+        proposal = state.get("proposal")
         text = state.get("final_text") or ""
         if not text.strip() and state.get("last_error"):
             text = str(state["last_error"])
+        if not text.strip() and proposal:
+            text = _proposal_summary(request.intent, proposal)
+        # A proposal is re-validated here rather than trusted from the graph state: this is the edge
+        # where AI output becomes application state (Rule 21).
+        bot_proposal = _as_bot_proposal(proposal) if request.intent == "build_bot" else None
+        tool_proposal = _as_tool_proposal(proposal) if request.intent == "build_tool" else None
         return AgentResult(
             response=text,
             tool_activity=activities,
@@ -303,6 +360,9 @@ class LangGraphRunner:
                 output_tokens=int(usage.get("output_tokens", 0)),
             ),
             steps=int(state.get("steps", 0)),
+            repairs=int(state.get("repairs", 0)),
+            bot_proposal=bot_proposal,
+            tool_proposal=tool_proposal,
         )
 
 
@@ -312,6 +372,21 @@ def _failed_outcome(tool_id: str, name: str, failure: AgentError):
     return ToolOutcome(
         tool_id=tool_id, name=name, ok=False, error=str(failure.reason), detail=failure.message
     )
+
+
+def _as_bot_proposal(payload: dict[str, Any] | None) -> BotProposal | None:
+    return _as_schema(BotProposal, payload) if payload else None
+
+
+def _as_tool_proposal(payload: dict[str, Any] | None) -> ToolProposal | None:
+    return _as_schema(ToolProposal, payload) if payload else None
+
+
+def _proposal_summary(intent: str, proposal: dict[str, Any]) -> str:
+    """The chat bubble still needs text: the proposal itself is shown as a card, not as prose."""
+    if intent == "build_tool":
+        return f"I drafted the tool “{proposal.get('name', '')}”. Review it before deploying."
+    return f"I drafted a bot called “{proposal.get('name', '')}”. Review it before deploying."
 
 
 __all__ = ["LangGraphRunner"]

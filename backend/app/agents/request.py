@@ -72,6 +72,9 @@ class AgentRequest:
     knowledge: tuple[str, ...] = ()
     deterministic_rules: tuple[dict[str, str], ...] = ()
     attachments: tuple[dict[str, Any], ...] = ()
+    #: What this turn should produce. `chat` answers; `build_bot`/`build_tool` return a validated
+    #: proposal for the user to confirm. Derived from the conversation mode, never guessed.
+    intent: str = "chat"
     max_steps: int = 8
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 

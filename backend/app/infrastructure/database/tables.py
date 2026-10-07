@@ -323,3 +323,49 @@ class ArtifactRow(Base):
     checksum_sha256: Mapped[str | None] = mapped_column(String(64))
     metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BuildRow(Base):
+    """One build request (State 10). Carries the captured bot version and model config so a
+    historical build can be reproduced (Rule 36)."""
+
+    __tablename__ = "builds"
+    __table_args__ = (Index("ix_builds_workspace_created", "workspace_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    bot_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False, index=True)
+    bot_version_id: Mapped[str] = mapped_column(String(ID_LENGTH), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    specification: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    model_config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    failure: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    image_tag: Mapped[str | None] = mapped_column(String(600))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BuildCheckpointRow(Base):
+    """One durable checkpoint in the build pipeline (State 10, Rule 31).
+
+    One row per (build_id, step) so a resumed build knows where it was and a retried activity
+    upserts instead of appending a duplicate.
+    """
+
+    __tablename__ = "build_checkpoints"
+    __table_args__ = (
+        UniqueConstraint("build_id", "step", name="uq_build_checkpoints_build_id_step"),
+        Index("ix_build_checkpoints_build_created", "build_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    build_id: Mapped[str] = mapped_column(
+        String(ID_LENGTH), ForeignKey("builds.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    step: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    output: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    error: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

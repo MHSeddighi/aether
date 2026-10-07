@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, status
 
+from app.agents.proposal import intent_for
 from app.api.deps import ConversationServiceDep, RunServiceDep, WorkspaceId
 from app.api.errors import ConflictError, NotFoundError
 from app.api.schemas import (
@@ -97,6 +98,9 @@ async def send_message(
                 conversation_id=conversation_id,
                 assistant_message_id=turn.assistant_message.message_id,
                 attachments=tuple(a.model_dump() for a in attachments),
+                # The frontend already declared the mode; asking a model to guess it would be both
+                # slower and less reliable.
+                intent=intent_for(str(conversation.mode)),
             ),
         )
     except BotNotRunnable as exc:

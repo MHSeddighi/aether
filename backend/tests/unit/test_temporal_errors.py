@@ -37,7 +37,9 @@ from app.infrastructure.temporal.worker import (
     build_container,
     build_role,
 )
+from app.workflows.build_bot import BuildBotWorkflow
 from app.workflows.contracts import RunAgentRequest
+from app.workflows.index_knowledge import IndexKnowledgeWorkflow
 from app.workflows.run_agent import AGENT_RETRY, LOAD_RETRY, RunAgentWorkflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError, CancelledError, FailureError, TimeoutType
@@ -179,17 +181,25 @@ class TestWorkflowIds:
 
 class TestWorkerWiring:
     def test_agent_role_registers_the_run_workflow_and_activities(self) -> None:
+        """The agent queue serves runs *and* knowledge indexing (State 10); the run activities are a
+        subset of what it serves."""
         role = agent_role(Settings(_env_file=None))
         assert role.name == "agent"
         assert role.task_queues == ["bot-builder"]
         assert RunAgentWorkflow in role.workflows
-        assert set(role.activities) == set(AGENT_ACTIVITIES)
-        assert len(role.activities) == 6
+        assert set(AGENT_ACTIVITIES) <= set(role.activities)
 
     def test_build_role_polls_its_own_queue(self) -> None:
         role = build_role(Settings(_env_file=None))
         assert role.task_queues == ["bot-builder-build"]
-        assert role.activities == []  # arrives with State 10
+        assert BuildBotWorkflow in role.workflows
+        assert len(role.activities) == 7
+
+    def test_agent_role_also_serves_knowledge_indexing(self) -> None:
+        """Knowledge indexing is a fast CPU-light operation, so it shares the agent queue."""
+        role = agent_role(Settings(_env_file=None))
+        assert IndexKnowledgeWorkflow in role.workflows
+        assert "process_knowledge_source" in {fn.__name__ for fn in role.activities}
 
     def test_activity_names_are_explicit_and_stable(self) -> None:
         names = {fn.__dict__["__temporal_activity_definition"].name for fn in AGENT_ACTIVITIES}

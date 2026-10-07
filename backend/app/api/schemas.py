@@ -268,6 +268,31 @@ class FeedbackRequest(Request):
     feedback: Literal["good", "bad"]
 
 
+# --- builds --------------------------------------------------------------
+
+
+class BuildRequest(Request):
+    """What to build. Empty means "build the current version as-is"."""
+
+    specification: str = Field(default="", max_length=8000)
+
+
+class BuildStateResponse(Request):
+    """Shape of `GET /builds/{id}` (documented so the OpenAPI schema is honest)."""
+
+    build_id: str
+    workspace_id: str
+    bot_id: str
+    bot_version_id: str
+    status: str
+    specification: str
+    image_tag: str | None = None
+    failure: dict | None = None
+    created_at: str | None = None
+    finished_at: str | None = None
+    checkpoints: list[dict] = Field(default_factory=list)
+
+
 # --- runs ---------------------------------------------------------------
 
 

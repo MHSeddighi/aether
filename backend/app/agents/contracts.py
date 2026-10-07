@@ -52,6 +52,9 @@ class ToolProposal(BaseModel):
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
     permissions: list[ToolPermission] = Field(default_factory=list)
+    #: Required when `handler == "http"`; the Tool Gateway calls this endpoint with the validated
+    #: arguments, so a proposal without it is not runnable.
+    url: str | None = None
     code_snippet: str | None = None
 
 

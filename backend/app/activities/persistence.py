@@ -92,6 +92,7 @@ async def load_bot_version(request: RunAgentRequest) -> dict[str, Any]:
         "knowledge": list(version.knowledge_ids),
         "deterministic_rules": [rule.model_dump() for rule in version.deterministic_rules],
         "attachments": list(request.attachments),
+        "intent": request.intent,
         "timeout_seconds": request.timeout_seconds,
     }
 
@@ -334,6 +335,7 @@ def build_agent_request(spec: dict[str, Any], *, max_steps: int) -> AgentRequest
         knowledge=tuple(spec.get("knowledge", [])),
         deterministic_rules=tuple(spec.get("deterministic_rules", [])),
         attachments=tuple(spec.get("attachments", [])),
+        intent=str(spec.get("intent", "chat")),
         max_steps=max_steps,
     )
 

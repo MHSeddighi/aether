@@ -22,7 +22,7 @@ from app.domain.failures import RunFailure
 from app.domain.models import CatalogModel
 from app.domain.runs import Run, RunEvent, RunStatus
 from app.domain.tools import Tool, ToolVersion
-from app.workflows.contracts import RunAgentRequest
+from app.workflows.contracts import IndexKnowledgeRequest, RunAgentRequest
 
 
 @runtime_checkable
@@ -135,3 +135,30 @@ class RunStarter(Protocol):
     async def start(self, request: RunAgentRequest, *, workflow_id: str) -> str: ...
 
     async def cancel(self, run_id: str) -> bool: ...
+
+
+@runtime_checkable
+class BuildRepositoryPort(Protocol):
+    async def add_build(self, build: dict) -> dict: ...
+
+    async def get_build(self, build_id: str, workspace_id: str) -> dict | None: ...
+
+    async def finish_build(self, build_id: str, *, status: str, failure: dict | None = None) -> None: ...
+
+    async def get_checkpoints(self, build_id: str) -> list[dict]: ...
+
+
+@runtime_checkable
+class BuildStarter(Protocol):
+    """Starts and cancels durable build executions (Temporal-backed in production)."""
+
+    async def start(self, spec: object, *, workflow_id: str) -> str: ...
+
+    async def cancel(self, build_id: str) -> bool: ...
+
+
+@runtime_checkable
+class KnowledgeStarter(Protocol):
+    """Starts durable knowledge indexing (Temporal-backed in production)."""
+
+    async def start(self, request: IndexKnowledgeRequest, *, workflow_id: str) -> str: ...

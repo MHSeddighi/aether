@@ -662,6 +662,24 @@ class TestKnowledgeService:
         assert source.files[0].size_bytes == 11
         assert blobs.read(blobs.path_for("ws_1", source.source_id, "notes.txt")) == b"hello world"
 
+    async def test_ingest_starts_durable_indexing(self) -> None:
+        """Uploading only writes bytes; indexing is a workflow, started by the stable id (Rule 14/18)."""
+        started: list[tuple[str, str]] = []
+
+        class RecordingStarter:
+            async def start(self, request, *, workflow_id: str) -> str:
+                started.append((request.source_id, workflow_id))
+                return workflow_id
+
+        service = KnowledgeService(FakeKnowledgeRepository(), InMemoryBlobStore(), RecordingStarter())
+        sources = await service.ingest("ws_1", [("a.txt", "text/plain", BytesIO(b"x"))])
+        assert started == [(sources[0].source_id, f"kb:{sources[0].source_id}")]
+
+    async def test_ingest_without_a_starter_still_works(self) -> None:
+        """Unit tests and any non-Temporal caller are not forced to provide a starter."""
+        service = KnowledgeService(FakeKnowledgeRepository(), InMemoryBlobStore())
+        assert len(await service.ingest("ws_1", [("a.txt", "text/plain", BytesIO(b"x"))])) == 1
+
     async def test_oversized_file_is_refused(self) -> None:
         service = KnowledgeService(FakeKnowledgeRepository(), InMemoryBlobStore())
         from app.application.knowledge_service import MAX_FILE_BYTES

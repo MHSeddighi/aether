@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.errors import AuthenticationRequired
 from app.application.auth_service import AuthService
 from app.application.bot_service import BotService
+from app.application.build_service import BuildService
 from app.application.conversation_service import ConversationService
 from app.application.event_stream import RunEventStream
 from app.application.knowledge_service import KnowledgeService, LocalBlobStore
@@ -33,6 +34,7 @@ from app.infrastructure.auth.tokens import TokenClaims, TokenError, TokenService
 from app.infrastructure.config import Settings
 from app.infrastructure.database.repositories.account_repository import AccountRepository
 from app.infrastructure.database.repositories.bot_repository import BotRepository
+from app.infrastructure.database.repositories.build_repository import BuildRepository
 from app.infrastructure.database.repositories.conversation_repository import ConversationRepository
 from app.infrastructure.database.repositories.knowledge_repository import KnowledgeRepository
 from app.infrastructure.database.repositories.run_repository import RunRepository
@@ -145,6 +147,10 @@ def get_bot_repository(session: Annotated[AsyncSession, Depends(get_session)]) -
     return BotRepository(session)
 
 
+def get_build_repository(session: Annotated[AsyncSession, Depends(get_session)]) -> BuildRepository:
+    return BuildRepository(session)
+
+
 def get_run_repository(session: Annotated[AsyncSession, Depends(get_session)]) -> RunRepository:
     return RunRepository(session)
 
@@ -165,12 +171,24 @@ def get_knowledge_repository(
     return KnowledgeRepository(session)
 
 
-def get_knowledge_service(
+async def get_knowledge_service(
+    request: Request,
     knowledge: Annotated[KnowledgeRepository, Depends(get_knowledge_repository)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> KnowledgeService:
-    """The blob store is process-local and rooted at the configured data volume."""
-    return KnowledgeService(knowledge, LocalBlobStore(Path(settings.data_dir)))
+    """The blob store is process-local and rooted at the configured data volume.
+
+    Indexing is started through the process's Temporal-backed `KnowledgeStarter` (injectable via
+    `app.state.knowledge_starter` for tests), mirroring `get_run_service`/`get_build_service`.
+    """
+    from app.infrastructure.temporal.knowledge_starter import TemporalKnowledgeStarter
+
+    starter = getattr(request.app.state, "knowledge_starter", None)
+    if starter is None:
+        starter = TemporalKnowledgeStarter(
+            await request.app.state.temporal.get(), task_queue=settings.temporal_task_queue
+        )
+    return KnowledgeService(knowledge, LocalBlobStore(Path(settings.data_dir)), starter)
 
 
 # --- use cases ----------------------------------------------------------
@@ -226,6 +244,24 @@ def get_model_service(settings: Annotated[Settings, Depends(get_settings)]) -> M
     )
 
 
+async def get_build_service(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    builds: Annotated[BuildRepository, Depends(get_build_repository)],
+    bots: Annotated[BotRepository, Depends(get_bot_repository)],
+) -> BuildService:
+    """Build the build use case with the process's Temporal-backed `BuildStarter`."""
+    from app.infrastructure.temporal.build_starter import TemporalBuildStarter
+
+    starter = getattr(request.app.state, "build_starter", None)
+    if starter is None:
+        starter = TemporalBuildStarter(
+            await request.app.state.temporal.get(),
+            task_queue=settings.temporal_build_task_queue,
+        )
+    return BuildService(builds, BotService(bots), starter)
+
+
 def get_event_stream(
     settings: Annotated[Settings, Depends(get_settings)],
     runs: Annotated[RunRepository, Depends(get_run_repository)],
@@ -239,6 +275,7 @@ def get_event_stream(
 
 
 BotServiceDep = Annotated[BotService, Depends(get_bot_service)]
+BuildServiceDep = Annotated[BuildService, Depends(get_build_service)]
 ToolServiceDep = Annotated[ToolService, Depends(get_tool_service)]
 ConversationServiceDep = Annotated[ConversationService, Depends(get_conversation_service)]
 KnowledgeServiceDep = Annotated[KnowledgeService, Depends(get_knowledge_service)]

@@ -40,6 +40,10 @@ class FakeModelClient:
     responses: list[ScriptedResponse] = field(default_factory=list)
     requests: list[GenerationRequest] = field(default_factory=list)
     stream_deltas: list[list[str]] = field(default_factory=list)
+    #: When true (the default) the last queued response repeats once the queue runs dry, which is
+    #: what most tests want. Set it to false to script an exact sequence — for example a repair loop
+    #: whose first attempt must fail and whose second must succeed.
+    sticky: bool = True
 
     def queue(self, response: ScriptedResponse | str) -> FakeModelClient:
         """Append a response. The last one is reused once the queue runs dry."""
@@ -54,9 +58,9 @@ class FakeModelClient:
 
     async def complete(self, request: GenerationRequest) -> Completion:
         self.requests.append(request)
-        if not self.responses:
-            return Completion(text="", finish_reason="stop", model=request.model.model_id)
         response = self._next_response()
+        if response is None:
+            return Completion(text="", finish_reason="stop", model=request.model.model_id)
         return Completion(
             text=response.text,
             tool_calls=response.tool_calls,
@@ -96,5 +100,9 @@ class FakeModelClient:
     def last_request(self) -> GenerationRequest | None:
         return self.requests[-1] if self.requests else None
 
-    def _next_response(self) -> ScriptedResponse:
-        return self.responses.pop(0) if len(self.responses) > 1 else self.responses[0]
+    def _next_response(self) -> ScriptedResponse | None:
+        if not self.responses:
+            return None
+        if self.sticky and len(self.responses) == 1:
+            return self.responses[0]
+        return self.responses.pop(0)

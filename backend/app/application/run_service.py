@@ -52,6 +52,7 @@ class StartRunCommand:
         "bot_id",
         "conversation_id",
         "input",
+        "intent",
         "timeout_seconds",
     )
 
@@ -63,6 +64,7 @@ class StartRunCommand:
         conversation_id: str | None = None,
         assistant_message_id: str | None = None,
         attachments: tuple[dict, ...] = (),
+        intent: str = "chat",
         timeout_seconds: float | None = None,
     ) -> None:
         self.bot_id = bot_id
@@ -70,6 +72,7 @@ class StartRunCommand:
         self.conversation_id = conversation_id
         self.assistant_message_id = assistant_message_id
         self.attachments = attachments
+        self.intent = intent
         self.timeout_seconds = timeout_seconds
 
 
@@ -127,6 +130,7 @@ class RunService:
             assistant_message_id=run.assistant_message_id,
             history=await self._history(workspace_id, run),
             attachments=tuple(command.attachments),
+            intent=command.intent,
             timeout_seconds=timeout,
         )
         await self._starter.start(request, workflow_id=f"run:{run.run_id}")
