@@ -37,6 +37,7 @@ from app.infrastructure.database.session import Database
 from app.infrastructure.logging_config import configure_logging, get_logger
 from app.infrastructure.models.gateway import build_model_client
 from app.infrastructure.temporal.client import connect
+from app.tools.gateway import build_tool_gateway
 from app.workflows.run_agent import RunAgentWorkflow
 
 logger = get_logger(__name__)
@@ -108,7 +109,8 @@ async def run_worker(role: WorkerRole, settings: Settings) -> None:
     if not role.activities:
         logger.warning("role has no activities registered yet", extra={"role": role.name})
     database = Database(settings)
-    build_container(settings, database)
+    tool_gateway = build_tool_gateway(settings)
+    build_container(settings, database, tool_executor_builder=lambda: tool_gateway)
     client = await connect(settings)
 
     workers = [

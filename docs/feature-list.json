@@ -1,6 +1,6 @@
 {
   "project": "bot-builder-backend",
-  "updated": "2026-10-07",
+  "updated": "2026-10-07 (session 1)",
   "states": [
     {
       "id": 0,
@@ -186,7 +186,7 @@
         "cancellation results in run status cancelled",
         "workflow is deterministic under replay of history"
       ],
-      "notes": "workflow + activities implemented and tested; the agent bots still run DeterministicRunner only, so the LangGraph path (State 5) and API start path (State 8) are still pending"
+      "notes": "workflow, activities and the deterministic path are implemented and tested (State 3); still pending: the API that starts a run, and run-level end-to-end tests (States 8/12)"
     },
     {
       "id": "model-gateway",
@@ -234,7 +234,8 @@
         "repair succeeds on second attempt",
         "repair budget exhausted -> failure_kind validation",
         "business constraint violation rejected"
-      ]
+      ],
+      "notes": "AgentResult/BotProposal validation and step bounds exist (States 5/6 groundwork), but the bounded self-repair loop for structured bot proposals is not implemented yet"
     },
     {
       "id": "tool-gateway",
