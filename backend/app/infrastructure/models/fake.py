@@ -2,6 +2,14 @@
 
 Used by unit tests, by the failure evaluator (State 11) and by any run that must not touch a paid
 provider. It is a real `ModelClient`, so nothing in the agent knows it is a fake.
+
+Two ways to script it:
+
+    FakeModelClient().queue("plain answer")                      # complete()
+    FakeModelClient(stream_deltas=[["par", "tial"]])            # stream() chunk list
+
+`stream_deltas` is a queue with one entry per streamed response; an empty entry means "this step
+produced no text yet" (typically the step that asks for a tool call).
 """
 
 from __future__ import annotations
@@ -28,24 +36,27 @@ class ScriptedResponse:
 
 @dataclass
 class FakeModelClient:
-    """Replays scripted responses and records every request it received."""
-
     provider: str = "fake"
     responses: list[ScriptedResponse] = field(default_factory=list)
     requests: list[GenerationRequest] = field(default_factory=list)
-    stream_deltas: list[str] | None = None
+    stream_deltas: list[list[str]] = field(default_factory=list)
 
     def queue(self, response: ScriptedResponse | str) -> FakeModelClient:
+        """Append a response. The last one is reused once the queue runs dry."""
         self.responses.append(
             response if isinstance(response, ScriptedResponse) else ScriptedResponse(text=response)
         )
+        return self
+
+    def queue_stream(self, pieces: list[str]) -> FakeModelClient:
+        self.stream_deltas.append(pieces)
         return self
 
     async def complete(self, request: GenerationRequest) -> Completion:
         self.requests.append(request)
         if not self.responses:
             return Completion(text="", finish_reason="stop", model=request.model.model_id)
-        response = self.responses.pop(0) if len(self.responses) > 1 else self.responses[0]
+        response = self._next_response()
         return Completion(
             text=response.text,
             tool_calls=response.tool_calls,
@@ -57,13 +68,33 @@ class FakeModelClient:
 
     async def stream(self, request: GenerationRequest) -> AsyncIterator[StreamChunk]:
         self.requests.append(request)
-        if not self.responses:
+        # A queued response drives tool calls, finish reason and usage; `stream_deltas` drives only
+        # the text, so a step can be scripted as "call a tool, say nothing".
+        response = self._next_response() if self.responses else None
+        if self.stream_deltas:
+            pieces = self.stream_deltas.pop(0)
+        elif response is not None:
+            pieces = [response.text]
+        else:
             return
-        response = self.responses.pop(0) if len(self.responses) > 1 else self.responses[0]
-        for piece in self.stream_deltas or [response.text]:
+
+        for piece in pieces:
             yield StreamChunk(text=piece)
-        yield StreamChunk(finish_reason=response.finish_reason)
+        if response is not None:
+            for call in response.tool_calls:
+                yield StreamChunk(tool_call_delta=call)
+        yield StreamChunk(
+            finish_reason=response.finish_reason if response else "stop",
+            usage=(
+                {"input_tokens": response.input_tokens, "output_tokens": response.output_tokens}
+                if response
+                else None
+            ),
+        )
 
     @property
     def last_request(self) -> GenerationRequest | None:
         return self.requests[-1] if self.requests else None
+
+    def _next_response(self) -> ScriptedResponse:
+        return self.responses.pop(0) if len(self.responses) > 1 else self.responses[0]

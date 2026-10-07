@@ -7,7 +7,7 @@ the workflow and activities never learn *how* a bot thinks (Rule 4).
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from app.agents.contracts import AgentResult
 from app.agents.request import AgentEvent, AgentRequest
@@ -16,6 +16,7 @@ from app.domain.deadline import Deadline
 Emit = Callable[[AgentEvent], Awaitable[None]]
 
 
+@runtime_checkable
 class AgentRunner(Protocol):
     async def run(self, request: AgentRequest, *, deadline: Deadline, emit: Emit) -> AgentResult:
         """Execute one turn and return a validated result.

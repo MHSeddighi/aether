@@ -70,6 +70,8 @@ class StreamChunk:
     text: str = ""
     tool_call_delta: ToolCall | None = None
     finish_reason: str | None = None
+    #: Present only on the final chunk when the caller asked for `stream_options.include_usage`.
+    usage: dict[str, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)

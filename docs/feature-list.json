@@ -30,7 +30,7 @@
     {
       "id": 5,
       "name": "langgraph-agent",
-      "status": "pending"
+      "status": "passing"
     },
     {
       "id": 6,
@@ -216,7 +216,7 @@
     {
       "id": "langgraph-agent",
       "description": "State graph (plan -> act/tools -> answer) driven by ModelClient and ToolGateway, streaming deltas as events",
-      "status": "pending",
+      "status": "passing",
       "tests": [
         "graph produces an answer with no tools",
         "graph executes a tool call and uses the result",

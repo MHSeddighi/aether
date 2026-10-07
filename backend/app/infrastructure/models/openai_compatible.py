@@ -195,7 +195,16 @@ def _tool_calls(raw: Any) -> tuple[ToolCall, ...]:
 
 def _chunk(raw: Any) -> StreamChunk:
     if not raw.choices:
-        return StreamChunk()
+        # OpenAI-compatible providers send a final, choice-less chunk carrying usage.
+        usage = getattr(raw, "usage", None)
+        return StreamChunk(
+            usage={
+                "input_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+                "output_tokens": getattr(usage, "completion_tokens", 0) or 0,
+            }
+            if usage
+            else None
+        )
     choice = raw.choices[0]
     delta = choice.delta
     call = None

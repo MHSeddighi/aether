@@ -13,8 +13,10 @@ from typing import Any
 
 from temporalio import activity
 
-from app.activities.container import get
+from app.activities.container import ActivityContainer, get
 from app.agents.contracts import AgentResult
+from app.agents.deterministic import DeterministicRunner
+from app.agents.graph import LangGraphRunner
 from app.agents.request import (
     MAX_HISTORY_MESSAGES,
     AgentEvent,
@@ -22,6 +24,7 @@ from app.agents.request import (
     ConversationTurn,
     ToolSpec,
 )
+from app.agents.runner import AgentRunner
 from app.domain.bots import BotMetricsAccumulator, BotType
 from app.domain.conversations import AttachmentProposal, Message, Sender
 from app.domain.deadline import Deadline
@@ -129,6 +132,7 @@ async def execute_agent(spec: dict[str, Any]) -> dict[str, Any]:
     model connection can observe token deltas.
     """
     container = get()
+    runner = runner_for(container, spec)
 
     async def emit(event: AgentEvent) -> None:
         if event.type == AGENT_DELTA:
@@ -147,7 +151,7 @@ async def execute_agent(spec: dict[str, Any]) -> dict[str, Any]:
     deadline = Deadline.in_seconds(
         spec.get("timeout_seconds") or container.settings.agent_run_timeout_seconds
     )
-    result = await container.agent_runner.run(request, deadline=deadline, emit=emit)
+    result = await runner.run(request, deadline=deadline, emit=emit)
     return result.model_dump(mode="json")
 
 
@@ -284,6 +288,19 @@ async def cancel_run(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 # --- helpers ---------------------------------------------------------------
+
+
+def runner_for(container: ActivityContainer, spec: dict[str, Any]) -> AgentRunner:
+    """Pick the executor for this run: deterministic bots never reach the gateway (Rule 4/36)."""
+    if BotType(spec["bot_type"]) is BotType.SIMPLE:
+        return DeterministicRunner()
+    model = ModelConfig.model_validate(spec["model"])
+    tool_executor = container.tool_executor_builder() if container.tool_executor_builder else None
+    return LangGraphRunner(
+        container.model_client_builder(model),
+        tool_executor=tool_executor,
+        stream=True,
+    )
 
 
 def _tool_spec(tool) -> ToolSpec:

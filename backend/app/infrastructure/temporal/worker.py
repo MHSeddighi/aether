@@ -18,7 +18,12 @@ from datetime import timedelta
 
 from temporalio.worker import Worker
 
-from app.activities.container import ActivityContainer, install
+from app.activities.container import (
+    ActivityContainer,
+    ModelClientBuilder,
+    ToolExecutorBuilder,
+    install,
+)
 from app.activities.persistence import (
     cancel_run,
     execute_agent,
@@ -27,10 +32,10 @@ from app.activities.persistence import (
     persist_run_result,
     start_run,
 )
-from app.agents.deterministic import DeterministicRunner
 from app.infrastructure.config import Settings, get_settings
 from app.infrastructure.database.session import Database
 from app.infrastructure.logging_config import configure_logging, get_logger
+from app.infrastructure.models.gateway import build_model_client
 from app.infrastructure.temporal.client import connect
 from app.workflows.run_agent import RunAgentWorkflow
 
@@ -79,11 +84,20 @@ def role_for(name: str, settings: Settings) -> WorkerRole:
     return agent_role(settings) if name == "agent" else build_role(settings)
 
 
-def build_container(settings: Settings, database: Database, agent_runner) -> ActivityContainer:
+def build_container(
+    settings: Settings,
+    database: Database,
+    *,
+    model_client_builder: ModelClientBuilder | None = None,
+    tool_executor_builder: ToolExecutorBuilder | None = None,
+) -> ActivityContainer:
+    """Assemble the activity container. Factories, not instances: a run builds its own client."""
+    builder = model_client_builder or (lambda config: build_model_client(settings, config))
     container = ActivityContainer(
         settings=settings,
         database=database,
-        agent_runner=agent_runner or DeterministicRunner(),
+        model_client_builder=builder,
+        tool_executor_builder=tool_executor_builder,
     )
     install(container)
     return container
@@ -94,7 +108,7 @@ async def run_worker(role: WorkerRole, settings: Settings) -> None:
     if not role.activities:
         logger.warning("role has no activities registered yet", extra={"role": role.name})
     database = Database(settings)
-    build_container(settings, database, agent_runner=None)
+    build_container(settings, database)
     client = await connect(settings)
 
     workers = [

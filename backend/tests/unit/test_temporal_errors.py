@@ -7,7 +7,6 @@ import asyncio
 import pytest
 from app.activities import container as activity_container
 from app.activities.container import ActivityContainer, get, install, reset
-from app.agents.deterministic import DeterministicRunner
 from app.domain.failures import (
     CancelledFailure,
     FailureKind,
@@ -19,6 +18,7 @@ from app.domain.failures import (
     ValidationFailure,
 )
 from app.infrastructure.config import Settings
+from app.infrastructure.models.fake import FakeModelClient
 from app.infrastructure.temporal.client import (
     workflow_id_for_build,
     workflow_id_for_indexing,
@@ -207,7 +207,9 @@ class TestWorkerWiring:
         with pytest.raises(RuntimeError, match="container is not installed"):
             get()
         sentinel = object()
-        install(ActivityContainer(settings=settings, database=sentinel, agent_runner=None))
+        install(
+            ActivityContainer(settings=settings, database=sentinel, model_client_builder=lambda _config: None)
+        )
         assert get().database is sentinel
         reset()
 
@@ -238,11 +240,46 @@ class TestWorkflowContracts:
 
 
 class TestActivityContainerDefaults:
-    async def test_default_runner_is_the_deterministic_one(self, settings: Settings) -> None:
+    async def test_container_exposes_factories_not_instances(self, settings: Settings) -> None:
+        """A run builds its own model client from its own captured config (Rule 36)."""
         reset()
-        container = build_container(settings, database=None, agent_runner=None)
-        assert isinstance(container.agent_runner, DeterministicRunner)
+        built: list[object] = []
+
+        def builder(config):
+            built.append(config)
+            return object()
+
+        container = build_container(settings, database=None, model_client_builder=builder)
+        assert container.model_client_builder is builder
+        assert container.tool_executor_builder is None
         assert get() is container
+        container.model_client_builder("config")
+        assert built == ["config"]
+        reset()
+
+    async def test_runner_selection_per_bot_type(self, settings: Settings) -> None:
+        """Deterministic bots never reach the model gateway; agent bots do (Rule 4)."""
+        from app.activities.persistence import runner_for
+        from app.agents.deterministic import DeterministicRunner
+        from app.agents.graph import LangGraphRunner
+        from app.domain.models import ModelConfig
+
+        reset()
+        container = build_container(
+            settings, database=None, model_client_builder=lambda _config: FakeModelClient()
+        )
+        deterministic_spec = {
+            "bot_type": "simple",
+            "model": ModelConfig(
+                provider="deterministic", model_id="none", temperature=0.0, top_p=1.0
+            ).model_dump(mode="json"),
+        }
+        agent_spec = {
+            "bot_type": "agent",
+            "model": ModelConfig(provider="opencode", model_id="space-bunny-free").model_dump(mode="json"),
+        }
+        assert isinstance(runner_for(container, deterministic_spec), DeterministicRunner)
+        assert isinstance(runner_for(container, agent_spec), LangGraphRunner)
         reset()
 
 

@@ -406,7 +406,7 @@ class TestFakeClient:
 
     async def test_fake_streams_deltas(self) -> None:
         fake = FakeModelClient().queue("hello world")
-        fake.stream_deltas = ["hello", " world"]
+        fake.stream_deltas = [["hello", " world"]]
         chunks = [chunk async for chunk in fake.stream(request_for())]
         assert [c.text for c in chunks] == ["hello", " world", ""]
 
