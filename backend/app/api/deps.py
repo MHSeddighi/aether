@@ -282,3 +282,4 @@ KnowledgeServiceDep = Annotated[KnowledgeService, Depends(get_knowledge_service)
 RunServiceDep = Annotated[RunService, Depends(get_run_service)]
 ModelServiceDep = Annotated[ModelService, Depends(get_model_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+SettingsDep = Annotated[Settings, Depends(get_settings)]

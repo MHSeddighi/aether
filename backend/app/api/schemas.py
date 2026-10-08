@@ -16,10 +16,11 @@ from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.domain.bots import Bot, BotStatus, BotType, DeterministicRule
+from app.domain.bots import Bot, BotStatus, BotType, BotVariable, DeterministicRule
 from app.domain.conversations import Attachment, ConversationMode
 from app.domain.models import DETERMINISTIC_MODEL_ID, Provider
 from app.domain.tools import ConnectionState, ToolCategory, ToolPermission
+from app.infrastructure.config import Settings
 
 
 class Request(BaseModel):
@@ -69,6 +70,7 @@ class BotFields(Request):
     tool_ids: list[str] = Field(default_factory=list)
     knowledge_ids: list[str] = Field(default_factory=list)
     deterministic_rules: list[DeterministicRule] = Field(default_factory=list)
+    variables: list[BotVariable] | None = None
     temperature: float | None = None
     top_p: float | None = None
     max_output_tokens: int | None = None
@@ -92,11 +94,13 @@ class BotFields(Request):
         provider = Provider(self.provider or settings.default_provider)
         return provider, self.model_id or settings.default_model_id_for(str(provider))
 
-    def to_draft(self, workspace_id: str, *, name: str) -> Bot:
-        """Domain draft with the request's explicit `None`s replaced by the configured defaults."""
-        from app.infrastructure.config import get_settings
+    def to_draft(self, workspace_id: str, *, name: str, settings: Settings) -> Bot:
+        """Domain draft with the request's explicit `None`s replaced by the configured defaults.
 
-        settings = get_settings()
+        Settings are passed in from the app's dependency graph rather than read from the process-wide
+        `get_settings()` singleton, so tests and multi-tenant deployments configure one app without
+        mutating global state.
+        """
         is_simple = self.bot_type is BotType.SIMPLE
         provider, model_id = self._resolved_model(settings)
         return Bot(
@@ -116,6 +120,7 @@ class BotFields(Request):
             tool_ids=list(self.tool_ids),
             knowledge_ids=list(self.knowledge_ids),
             deterministic_rules=list(self.deterministic_rules),
+            variables=list(self.variables or []),
             temperature=(0.0 if is_simple else self._temperature_or_default(settings.default_temperature)),
             top_p=settings.default_top_p,
             max_output_tokens=(
@@ -136,8 +141,8 @@ class BotFields(Request):
 class BotCreateRequest(BotFields):
     name: str = Field(min_length=1, max_length=200)
 
-    def to_draft(self, workspace_id: str) -> Bot:
-        return super().to_draft(workspace_id, name=self.name)
+    def to_draft(self, workspace_id: str, settings: Settings) -> Bot:
+        return super().to_draft(workspace_id, name=self.name, settings=settings)
 
 
 class BotPatchRequest(BotFields):
@@ -257,6 +262,9 @@ class ConversationCreateRequest(Request):
 class ConversationPatchRequest(Request):
     title: str | None = Field(default=None, max_length=300)
     is_pinned: bool | None = None
+    #: Set when the bot a builder chat produced becomes known; before that the conversation is
+    #: pointed at a placeholder.
+    bot_id: str | None = Field(default=None, max_length=64)
 
 
 class SendMessageRequest(Request):

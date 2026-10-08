@@ -98,8 +98,32 @@ LIVE_PROVIDER=opencode LIVE_MODEL=space-bunny-free uv run pytest tests/integrati
 
 # everything
 LIVE_PROVIDER=opencode LIVE_MODEL=space-bunny-free TEMPORAL_TEST_SERVER=1 \
-  uv run pytest -q      # 276 passed
+  uv run pytest -q
 ```
+
+### Browser tests (Playwright)
+
+The browser suite drives the real UI against the real API and Temporal workers, so the whole
+stack must be up plus the Vite dev server:
+
+```bash
+./scripts/init.sh up
+cd web && npm install && npm run dev     # in another shell
+
+cd web
+npm test                                  # the whole suite
+npm run test:headed                       # watch it happen
+npx playwright test e2e/chat.spec.ts      # one file
+npx playwright test --grep "playground"   # one topic
+npm run test:report                       # open the HTML report
+```
+
+`node scripts/e2e/run.mjs` is a thin wrapper around the same suite. Overrides: `APP_URL`,
+`API_URL`, `CHROME_PATH` (the runner otherwise finds a Chromium under
+`~/.cache/ms-playwright`).
+
+The suite asserts on durable state as well as on the screen: after every chat turn it checks
+the conversation through the API, so a UI that merely *looks* right cannot pass.
 
 ## Notes
 

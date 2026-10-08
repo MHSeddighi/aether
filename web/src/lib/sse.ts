@@ -23,7 +23,10 @@ function parseFrame(frame: string): RunEvent | null {
   let id = '';
   let type = '';
   const dataLines: string[] = [];
-  for (const line of frame.split('\n')) {
+  // The backend frames events with CRLF, which is valid SSE and what every browser then
+  // receives. Normalising here is what makes the frames parseable at all — splitting on
+  // a bare `\n\n` silently matched nothing and the UI only ever showed post-run refetches.
+  for (const line of frame.replace(/\r\n/g, '\n').split('\n')) {
     if (!line || line.startsWith(':')) continue; // heartbeat comment
     const separator = line.indexOf(':');
     const field = separator === -1 ? line : line.slice(0, separator);
@@ -69,18 +72,34 @@ export function subscribeToRun(runId: string, handlers: RunStreamHandlers): RunS
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+
+      const drain = () => {
+        // A frame ends with a blank line, which may be CRLF or LF.
+        let match = /\r?\n\r?\n/.exec(buffer);
+        while (match) {
+          const frame = buffer.slice(0, match.index);
+          buffer = buffer.slice(match.index + match[0].length);
+          const event = parseFrame(frame);
+          if (event) handlers.onEvent(event);
+          match = /\r?\n\r?\n/.exec(buffer);
+        }
+      };
+
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        let boundary = buffer.indexOf('\n\n');
-        while (boundary !== -1) {
-          const frame = buffer.slice(0, boundary);
-          buffer = buffer.slice(boundary + 2);
-          const event = parseFrame(frame);
-          if (event) handlers.onEvent(event);
-          boundary = buffer.indexOf('\n\n');
-        }
+        drain();
+      }
+      // Flush the tail. Browsers may hand over a whole short-lived run in one chunk, so
+      // every frame can still be sitting in the buffer when the stream ends — dropping it
+      // meant a fast run delivered no events at all and the UI only ever recovered through
+      // the post-run refetch.
+      buffer += decoder.decode();
+      drain();
+      if (buffer.trim()) {
+        const event = parseFrame(buffer);
+        if (event) handlers.onEvent(event);
       }
     } catch (error) {
       // An abort is the caller closing the stream, not a failure.

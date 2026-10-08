@@ -128,14 +128,19 @@ class OpenAICompatibleModelClient:
             payload["tools"] = [tool.as_openai_tool() for tool in request.tools]
             payload["tool_choice"] = "auto"
         if request.response_schema is not None:
-            payload["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": request.response_schema.get("title", "response"),
-                    "schema": request.response_schema,
-                    "strict": False,
-                },
-            }
+            if self._provider.json_schema_supported:
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": request.response_schema.get("title", "response"),
+                        "schema": request.response_schema,
+                        "strict": False,
+                    },
+                }
+            else:
+                # Older OpenAI-compatible providers (DeepSeek) only implement `json_object`; the
+                # schema is still enforced by Pydantic after parsing (Rule 21).
+                payload["response_format"] = {"type": "json_object"}
         if request.stop:
             payload["stop"] = list(request.stop)
         if stream:

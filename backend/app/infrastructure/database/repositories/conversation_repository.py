@@ -156,6 +156,19 @@ class ConversationRepository:
         row.title = title
         return True
 
+    async def set_bot(self, conversation_id: str, workspace_id: str, bot_id: str) -> bool:
+        """Re-point a conversation at another bot.
+
+        A builder chat is created before the bot it will produce exists, so the artifact it builds
+        gets bound afterwards. Only the *next* run is affected: already-recorded messages keep the
+        run that produced them, which is what the history above the artifact card must show.
+        """
+        row = await self._session.get(ConversationRow, conversation_id)
+        if row is None or row.workspace_id != workspace_id:
+            return False
+        row.bot_id = bot_id
+        return True
+
     async def set_pinned(self, conversation_id: str, workspace_id: str, pinned: bool) -> bool:
         row = await self._session.get(ConversationRow, conversation_id)
         if row is None or row.workspace_id != workspace_id:

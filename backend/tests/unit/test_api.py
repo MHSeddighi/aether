@@ -223,6 +223,7 @@ BOT_ITEM_KEYS = {
     "toolIds",
     "knowledgeIds",
     "deterministicRules",
+    "variables",
     "temperature",
     "topP",
     "maxOutputTokens",
@@ -246,11 +247,13 @@ class TestBotRoutes:
             body = client.get(f"{PREFIX}/bots").json()
         assert isinstance(body, list) and len(body) == 1
         assert set(body[0]) == BOT_ITEM_KEYS
+        # camelCase all the way down: the frontend's `BotItem.metrics` is camelCase, so
+        # snake_case keys here silently left `metrics.totalRuns` undefined.
         assert body[0]["metrics"] == {
-            "total_runs": 0,
-            "avg_latency_ms": 0,
-            "tokens_consumed": 0,
-            "success_rate_percent": 100.0,
+            "totalRuns": 0,
+            "avgLatencyMs": 0,
+            "tokensConsumed": 0,
+            "successRatePercent": 100.0,
         }
         assert body[0]["lastUsed"] == "Never"
 

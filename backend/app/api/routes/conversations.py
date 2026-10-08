@@ -60,7 +60,9 @@ async def update_conversation(
     service: ConversationServiceDep,
     workspace: WorkspaceId,
 ) -> dict:
-    """Rename and/or pin. Both are optional, so a rename does not clear the pin and vice versa."""
+    """Rename, pin and/or rebind. All optional, so one never clears another."""
+    if payload.bot_id is not None:
+        await service.set_bot(workspace, conversation_id, payload.bot_id)
     if payload.title is not None:
         await service.rename(workspace, conversation_id, payload.title)
     if payload.is_pinned is not None:

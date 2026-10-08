@@ -254,6 +254,20 @@ class TestBotService:
         updated = await bots.update("ws_1", created.bot_id, {"description": "now documented"})
         assert updated.version == "1.0.0", "renaming a bot is not a behavioural change"
 
+    async def test_presentation_only_change_records_no_new_version(self, bots: BotService) -> None:
+        """`(bot_id, version)` is unique, so a save that does not change behaviour must not
+        append another row for the current label — otherwise every rename is a 500."""
+        created = await bots.create(
+            "ws_1",
+            Bot(bot_id="", workspace_id="ws_1", name="Bot", provider=Provider.OPENCODE, model_id="m"),
+        )
+        updated = await bots.update("ws_1", created.bot_id, {"description": "now documented"})
+        assert [v.version for v in updated.versions] == ["1.0.0"]
+
+        # A later behavioural save still appends exactly one version.
+        again = await bots.update("ws_1", created.bot_id, {"instructions": "Answer in Persian"})
+        assert [v.version for v in again.versions] == ["1.1.0", "1.0.0"]
+
     async def test_unknown_field_is_rejected(self, bots: BotService) -> None:
         created = await bots.create(
             "ws_1",
@@ -261,6 +275,43 @@ class TestBotService:
         )
         with pytest.raises(ValidationFailure, match="unknown bot fields"):
             await bots.update("ws_1", created.bot_id, {"nope": 1})
+
+    async def test_request_shaped_rules_are_stored_as_domain_objects(self, bots: BotService) -> None:
+        """The frontend sends the whole bot back on save, so rules arrive as plain dicts.
+
+        Patching with `model_copy(update=...)` skipped validation and left dicts in the
+        aggregate, which the repository could not serialise — every "Save changes" click
+        on a simple bot failed with a 500.
+        """
+        created = await bots.create(
+            "ws_1",
+            Bot(
+                bot_id="",
+                workspace_id="ws_1",
+                name="Rules Bot",
+                bot_type=BotType.SIMPLE,
+                provider=Provider.DETERMINISTIC,
+                model_id="none",
+                temperature=0.0,
+                deterministic_rules=[DeterministicRule(trigger="ping", response="pong")],
+            ),
+        )
+        updated = await bots.update(
+            "ws_1",
+            created.bot_id,
+            {
+                "deterministic_rules": [
+                    {"trigger": "refund", "response": "Within 7 days."},
+                    {"trigger": "ping", "response": "pong!"},
+                ]
+            },
+        )
+
+        assert all(isinstance(rule, DeterministicRule) for rule in updated.deterministic_rules)
+        assert [rule.trigger for rule in updated.deterministic_rules] == ["refund", "ping"]
+        assert updated.match_rule("I want a refund") is not None
+        # The rule set is behaviour, so it must also produce a new version.
+        assert updated.version == "1.1.0"
 
     async def test_archived_bot_is_revived_as_a_draft_when_edited(self, bots: BotService) -> None:
         created = await bots.create(

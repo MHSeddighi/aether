@@ -33,7 +33,18 @@ def client(app) -> TestClient:
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Provider keys must never leak from the developer's shell into tests."""
+    """Provider keys must never leak from the developer's shell into tests.
+
+    The exception is the opt-in live-provider suite (`LIVE_PROVIDER=...`): that test *needs* the
+    real key for the provider it is exercising, so it is kept and every other key is still removed.
+    """
+    live_key = {
+        "openrouter": "OPENROUTER_API_KEY",
+        "opencode": "OPENCODE_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
+    }.get(os.getenv("LIVE_PROVIDER", ""))
     for var in ("OPENROUTER_API_KEY", "OPENCODE_API_KEY", "DEEPSEEK_API_KEY"):
+        if var == live_key:
+            continue
         monkeypatch.delenv(var, raising=False)
     os.environ.setdefault("TZ", "UTC")

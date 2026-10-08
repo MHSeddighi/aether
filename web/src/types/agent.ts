@@ -29,6 +29,17 @@ export interface KnowledgeItem {
   updatedAt: string;
 }
 
+/**
+ * A named constant a bot declares and its runner substitutes into the instructions at run time.
+ * Referenced from `instructions` as `{{name}}`; the backend owns both the name pattern and the
+ * substitution, so the client only renders and collects it.
+ */
+export interface BotVariable {
+  name: string;
+  value: string;
+  description?: string;
+}
+
 export interface BotVersion {
   version: string;
   versionId?: string;
@@ -76,6 +87,7 @@ export interface BotItem {
   instructionsFa?: string;
   toolIds: string[];
   knowledgeIds: string[];
+  variables: BotVariable[];
   temperature: number;
   topP?: number;
   maxOutputTokens?: number;
@@ -93,6 +105,12 @@ export interface BotProposal {
   isConfirmed?: boolean;
   codeSnippet?: string;
 }
+
+/**
+ * Lifecycle of the bot a conversation produces. `draft` until the AI has built it, `ready` once it
+ * has been exercised in the preview, `published` after the user ships it.
+ */
+export type ArtifactStatus = 'draft' | 'ready' | 'published';
 
 export interface ToolProposal {
   proposedTool: Partial<ToolItem>;
@@ -128,6 +146,10 @@ export interface ChatMessage {
 export interface ChatConversation {
   id: string;
   title: string;
+  /**
+   * The bot this conversation is about. It points at the builder host until the AI produces the
+   * first artifact, and at that artifact from then on — one chat, one bot.
+   */
   botId: string;
   category: HistoryCategory;
   updatedAt: string;
@@ -173,6 +195,9 @@ export interface RunRecord {
   steps: number;
   repairs: number;
   latencyMs: number | null;
+  createdAt?: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
 }
 
 export interface RunEvent {

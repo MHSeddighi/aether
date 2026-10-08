@@ -37,7 +37,7 @@ const MOCK_TOOL_STATS: Record<string, ToolTelemetryDetail> = {
     lastInvoked: '1m ago',
     errorCount: 1,
     sampleInput: '{"query": "Gemini 2.5 Flash architectural benchmark 2026"}',
-    sampleOutput: '{"status": 200, "resultsCount": 8, "latencyMs": 142}',
+    sampleOutput: '{"status": 200, "resultsCount": 8}',
   },
   'tool-hybrid-vector': {
     toolId: 'tool-hybrid-vector',
@@ -326,10 +326,10 @@ export const ToolsWorkspace: React.FC = () => {
               </div>
               <div className="p-3 rounded-lg bg-[var(--md-sys-color-surface-container)]">
                 <span className="text-[10px] text-[var(--md-sys-color-on-surface-variant)] block mb-1">
-                  Median / P99
+                  Error Rate
                 </span>
                 <span className="text-base font-semibold font-mono text-[var(--md-sys-color-on-surface)]">
-                  {selectedStats.avgLatencyMs} / {selectedStats.p99LatencyMs}ms
+                  {Math.max(0, 100 - selectedStats.successRatePercent)}%
                 </span>
               </div>
               <div className="p-3 rounded-lg bg-[var(--md-sys-color-surface-container)]">

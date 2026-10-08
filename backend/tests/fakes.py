@@ -76,15 +76,16 @@ class FakeBotRepository:
     async def list(self, workspace_id: str, *, limit: int = 200) -> list[Bot]:
         return [b for b in self.bots.values() if b.workspace_id == workspace_id][:limit]
 
-    async def update(self, bot: Bot, *, version: BotVersion, notes: str) -> Bot:
+    async def update(self, bot: Bot, *, version: BotVersion | None, notes: str) -> Bot:
         existing = self.bots.get(bot.bot_id)
         if existing is None or existing.workspace_id != bot.workspace_id:
             raise LookupError(bot.bot_id)
         previous = self.version_history.get(bot.bot_id, [])
-        # Newest first, and history is never rewritten — the real repository enforces this with a
-        # database trigger, so the fake must not be laxer.
-        self.version_history[bot.bot_id] = [version, *previous]
-        stored = bot.model_copy(update={"versions": self.version_history[bot.bot_id]})
+        if version is not None:
+            # Newest first, and history is never rewritten — the real repository enforces this
+            # with a database trigger, so the fake must not be laxer.
+            self.version_history[bot.bot_id] = [version, *previous]
+        stored = bot.model_copy(update={"versions": self.version_history.get(bot.bot_id, [])})
         self.bots[bot.bot_id] = stored
         return stored
 

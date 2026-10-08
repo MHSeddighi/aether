@@ -32,6 +32,12 @@ class BotProposal(BaseModel):
     tool_ids: list[str] = Field(default_factory=list)
     knowledge_ids: list[str] = Field(default_factory=list)
     deterministic_rules: list[dict[str, str]] = Field(default_factory=list)
+    #: `{{name}}` constants the proposed bot should declare, referenced from its instructions.
+    variables: list[dict[str, str]] = Field(default_factory=list)
+    #: Capabilities the model asked for that the workspace does not have. Dropped from the ids
+    #: above and reported here so the chat can name them, rather than failing the whole proposal.
+    unattached_tools: list[str] = Field(default_factory=list)
+    unattached_knowledge: list[str] = Field(default_factory=list)
     code_snippet: str | None = None
 
     @property
@@ -56,6 +62,9 @@ class BotProposal(BaseModel):
             "toolIds": list(self.tool_ids),
             "knowledgeIds": list(self.knowledge_ids),
             "deterministicRules": list(self.deterministic_rules),
+            "variables": [dict(variable) for variable in self.variables],
+            "unattachedTools": list(self.unattached_tools),
+            "unattachedKnowledge": list(self.unattached_knowledge),
         }
 
 

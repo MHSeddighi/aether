@@ -80,6 +80,15 @@ class ConversationService:
         if not await self._conversations.rename(conversation_id, workspace_id, title.strip()):
             raise ConversationNotFound(conversation_id)
 
+    async def set_bot(self, workspace_id: str, conversation_id: str, bot_id: str) -> None:
+        """Bind a conversation to the bot it produced, once that bot exists."""
+        if not bot_id.strip():
+            raise ValidationFailure(
+                FailureReason.OUTPUT_CONSTRAINT, "bot_id must not be blank", details={"field": "bot_id"}
+            )
+        if not await self._conversations.set_bot(conversation_id, workspace_id, bot_id.strip()):
+            raise ConversationNotFound(conversation_id)
+
     async def set_pinned(self, workspace_id: str, conversation_id: str, pinned: bool) -> None:
         if not await self._conversations.set_pinned(conversation_id, workspace_id, pinned):
             raise ConversationNotFound(conversation_id)

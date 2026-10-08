@@ -45,11 +45,16 @@ logger = get_logger(__name__)
 
 MAX_PROVIDER_TEMPERATURE = 2.0
 
+#: `provider` and `model_id` are deliberately absent from the required keys. The model a bot runs on
+#: is the workspace's decision (Settings, or the compact config) — not the designer's — so the
+#: proposal inherits whatever model the run itself is executing on rather than inventing an id that
+#: may not exist in any configured provider catalogue.
 BOT_SCHEMA_HINT = """
 You are designing an assistant bot for a chat workspace. Reply with a single JSON object and nothing
-else. Required keys: name (string), description (string), instructions (string), provider (one of
-"openrouter", "opencode", "deepseek"), model_id (string), temperature (number 0..2), tool_ids (array
-of strings), knowledge_ids (array of strings). Keep the instructions short, concrete and testable.
+else. Required keys: name (string), description (string), instructions (string), temperature (number
+0..2), tool_ids (array of strings), knowledge_ids (array of strings), variables (array of objects
+with name, value and description; reference one from the instructions as {{name}}). Keep the
+instructions short, concrete and testable.
 """.strip()
 
 TOOL_SCHEMA_HINT = """
@@ -101,7 +106,12 @@ class ProposalGenerator:
             model=model,
             deadline=deadline,
             validate=lambda payload: _validate_bot(
-                payload, known_tool_ids=known_tool_ids, known_knowledge_ids=known_knowledge_ids
+                payload,
+                known_tool_ids=known_tool_ids,
+                known_knowledge_ids=known_knowledge_ids,
+                # Whatever the model says, the artifact runs on the model that is provably
+                # configured — the one executing this very proposal.
+                host_model=model,
             ),
             emit=emit,
         )
@@ -234,6 +244,7 @@ def _validate_bot(
     *,
     known_tool_ids: tuple[str, ...] = (),
     known_knowledge_ids: tuple[str, ...] = (),
+    host_model: ModelConfig | None = None,
 ) -> BotProposal:
     """Schema, then the constraints a schema cannot express."""
     proposal = _as_schema(BotProposal, payload)
@@ -256,22 +267,31 @@ def _validate_bot(
             "a simple bot must use the deterministic provider",
             details={"field": "provider", "value": proposal.provider},
         )
+    # A capability the workspace does not have yet ("can check order status") is a legitimate
+    # thing for a bot design to mention — it is the whole point of describing a bot before wiring
+    # it up. Failing the proposal on it means the repair loop re-asks a model that will keep
+    # inventing the same tool, and the user gets nothing.
+    #
+    # So unknown ids are dropped from the proposal and reported back instead: the bot is built with
+    # what actually exists, and the dropped names travel with the proposal so the chat can tell the
+    # user which capabilities still need connecting. A *known* tool the gateway would refuse is a
+    # different failure, and that one is still caught above.
     unknown_tools = sorted(set(proposal.tool_ids) - set(known_tool_ids))
-    if unknown_tools:
-        # Better to propose nothing than to reference a tool the gateway will refuse at run time.
-        raise ValidationFailure(
-            FailureReason.OUTPUT_CONSTRAINT,
-            f"proposal references tools that do not exist: {unknown_tools}",
-            details={"field": "tool_ids", "unknown": unknown_tools},
-        )
     unknown_knowledge = sorted(set(proposal.knowledge_ids) - set(known_knowledge_ids))
+    update: dict[str, Any] = {}
+    if unknown_tools:
+        update["tool_ids"] = [i for i in proposal.tool_ids if i in known_tool_ids]
+        update["unattached_tools"] = unknown_tools
     if unknown_knowledge:
-        raise ValidationFailure(
-            FailureReason.OUTPUT_CONSTRAINT,
-            f"proposal references knowledge sources that do not exist: {unknown_knowledge}",
-            details={"field": "knowledge_ids", "unknown": unknown_knowledge},
-        )
-    return proposal
+        update["knowledge_ids"] = [i for i in proposal.knowledge_ids if i in known_knowledge_ids]
+        update["unattached_knowledge"] = unknown_knowledge
+    if host_model is not None:
+        # The model id is normalised rather than validated against a live provider catalogue: the
+        # catalogue is a network call, and the run's own model is the one identity already proven
+        # to exist and to be payable for.
+        update["provider"] = str(host_model.provider)
+        update["model_id"] = host_model.model_id
+    return proposal.model_copy(update=update) if update else proposal
 
 
 def _validate_tool(payload: dict[str, Any]) -> ToolProposal:

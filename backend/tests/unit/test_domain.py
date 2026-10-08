@@ -13,6 +13,7 @@ from app.domain.bots import (
     BotMetricsAccumulator,
     BotStatus,
     BotType,
+    BotVariable,
     BotVersion,
     DeterministicRule,
     bot_to_dict,
@@ -233,6 +234,37 @@ class TestBot:
         assert payload["versions"][0]["version"] == "1.0.0"
         assert payload["versions"][0]["model"] == "Space Bunny Free"
 
+    def test_nested_payloads_are_camel_case(self) -> None:
+        """The frontend's `BotItem` is camelCase all the way down.
+
+        `model_dump()` used to leak `total_runs`/`rpm_quota` here, which silently
+        broke every consumer that read `bot.metrics.totalRuns`.
+        """
+        bot = make_bot()
+        bot.metrics = BotMetrics(
+            total_runs=10, avg_latency_ms=100, tokens_consumed=5, success_rate_percent=99.4
+        )
+        bot.billing_usage = BotBillingUsage(monthly_estimated_cost=1.5, rpm_quota=100)
+
+        payload = bot_to_dict(bot)
+
+        assert payload["metrics"] == {
+            "totalRuns": 10,
+            "avgLatencyMs": 100,
+            "tokensConsumed": 5,
+            "successRatePercent": 99.4,
+        }
+        assert set(payload["billingUsage"]) == {
+            "monthlyEstimatedCost",
+            "inputTokens",
+            "outputTokens",
+            "cachedTokens",
+            "costPerThousandRequests",
+            "rpmQuota",
+            "tpmQuota",
+            "monthlyBudgetCap",
+        }
+
     def test_archived_status_is_allowed(self) -> None:
         assert make_bot(status=BotStatus.ARCHIVED).status is BotStatus.ARCHIVED
 
@@ -247,6 +279,44 @@ class TestBot:
         version = make_version(make_bot())
         with pytest.raises(ValidationError):
             version.instructions = "changed"  # type: ignore[misc]
+
+
+class TestBotVariables:
+    def test_variables_render_into_the_instructions(self) -> None:
+        bot = make_bot(
+            instructions="You serve customers in the {{region}} region.",
+            variables=[BotVariable(name="region", value="EU-West")],
+        )
+        assert bot.resolved_instructions == "You serve customers in the EU-West region."
+
+    def test_an_unknown_placeholder_is_left_intact(self) -> None:
+        """A blanked-out `{{name}}` reads as a finished sentence; the literal reads as a bug."""
+        bot = make_bot(instructions="Ship to {{region}} from {{warehouse}}.")
+        assert bot.resolved_instructions == "Ship to {{region}} from {{warehouse}}."
+
+    def test_an_unterminated_placeholder_is_left_intact(self) -> None:
+        bot = make_bot(instructions="Ship to {{region")
+        assert bot.resolved_instructions == "Ship to {{region"
+
+    def test_variable_names_must_be_unique(self) -> None:
+        with pytest.raises(ValidationError, match="unique"):
+            make_bot(
+                variables=[
+                    BotVariable(name="region", value="EU"),
+                    BotVariable(name="region", value="US"),
+                ]
+            )
+
+    @pytest.mark.parametrize("name", ["has space", "1leading-digit", "dash-name", ""])
+    def test_variable_names_must_be_identifier_safe(self, name: str) -> None:
+        with pytest.raises(ValidationError):
+            make_bot(variables=[BotVariable(name=name)])
+
+    def test_variables_serialise_onto_the_wire(self) -> None:
+        bot = make_bot(variables=[BotVariable(name="region", value="EU", description="Where we ship")])
+        assert bot_to_dict(bot)["variables"] == [
+            {"name": "region", "value": "EU", "description": "Where we ship"}
+        ]
 
 
 class TestBotMetrics:

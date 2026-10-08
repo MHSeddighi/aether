@@ -1,54 +1,34 @@
 import React from 'react';
+import { useRouterState } from '@tanstack/react-router';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { UnifiedSidebar } from '../navigation/UnifiedSidebar';
-import { ChatWorkspace } from '../chat/ChatWorkspace';
-import { BotsWorkspace } from '../bots/BotsWorkspace';
-import { ToolsWorkspace } from '../tools/ToolsWorkspace';
-import { KnowledgeWorkspace } from '../knowledge/KnowledgeWorkspace';
-import { SettingsWorkspace } from '../settings/SettingsWorkspace';
 import { CommandPalette } from '../search/CommandPalette';
-import { AuthWorkspace } from '../auth/AuthWorkspace';
+import { ChatWorkspace } from '../chat/ChatWorkspace';
 
-export const AppShell: React.FC = () => {
-  const { currentSection, isRTL, isAuthenticated, isBooting } = useWorkspace();
+/**
+ * Layout for every authenticated page: the routed viewport and the global command palette.
+ *
+ * The Bot Builder is the exception. Its workspace *is* the conversation, so it renders on its own —
+ * no sidebar, no header, nothing between the user and the thread. The rest of the product still
+ * navigates through the sidebar, because those pages are surfaces that need one.
+ *
+ * Which page renders inside the viewport is the router's decision; this only decides whether the
+ * chat needs app chrome around it, and it answers that by asking the router where it is.
+ */
+export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isRTL } = useWorkspace();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
-  const renderSection = () => {
-    switch (currentSection) {
-      case 'chat':
-        return <ChatWorkspace />;
-      case 'bots':
-        return <BotsWorkspace />;
-      case 'tools':
-        return <ToolsWorkspace />;
-      case 'knowledge':
-        return <KnowledgeWorkspace />;
-      case 'settings':
-        return <SettingsWorkspace />;
-      default:
-        return <ChatWorkspace />;
-    }
-  };
+  const isChat = pathname === '/chat' || pathname === '/';
 
-  if (isBooting) {
-    return (
-      <div
-        className="h-screen w-screen flex items-center justify-center bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)]"
-        dir={isRTL ? 'rtl' : 'ltr'}
-      >
-        <span className="text-sm text-[var(--md-sys-color-on-surface-variant)]">
-          Loading your workspace…
-        </span>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
+  if (isChat) {
     return (
       <div
         className="h-screen w-screen overflow-hidden bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)]"
         dir={isRTL ? 'rtl' : 'ltr'}
       >
-        <AuthWorkspace />
+        <ChatWorkspace />
+        <CommandPalette />
       </div>
     );
   }
@@ -58,15 +38,10 @@ export const AppShell: React.FC = () => {
       className="flex h-screen w-screen overflow-hidden bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)]"
       dir={isRTL ? 'rtl' : 'ltr'}
     >
-      {/* Primary Unified Navigation Sidebar */}
       <UnifiedSidebar />
 
-      {/* Main Workspace Viewport (New Chat = Home) */}
-      <main className="flex-1 h-full overflow-hidden relative">
-        {renderSection()}
-      </main>
+      <main className="relative h-full flex-1 overflow-hidden">{children}</main>
 
-      {/* Global Command Palette */}
       <CommandPalette />
     </div>
   );

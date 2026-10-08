@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, status
 
-from app.api.deps import BotServiceDep, WorkspaceId
+from app.api.deps import BotServiceDep, SettingsDep, WorkspaceId
 from app.api.errors import NotFoundError
 from app.api.schemas import BotCreateRequest, BotPatchRequest
 from app.application.bot_service import BotNotFound
@@ -24,11 +24,24 @@ async def list_bots(service: BotServiceDep, workspace: WorkspaceId) -> list[dict
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_bot(payload: BotCreateRequest, service: BotServiceDep, workspace: WorkspaceId) -> dict:
+async def create_bot(
+    payload: BotCreateRequest, service: BotServiceDep, workspace: WorkspaceId, settings: SettingsDep
+) -> dict:
     """Create a bot at version 1.0.0 with its first immutable version."""
-    draft = payload.to_draft(workspace)
+    draft = payload.to_draft(workspace, settings)
     created = await service.create(workspace, draft)
     return bot_to_dict(created)
+
+
+@router.get("/builder")
+async def get_builder_bot(service: BotServiceDep, workspace: WorkspaceId, settings: SettingsDep) -> dict:
+    """The builder host, provisioned on first call.
+
+    A builder conversation is created before the bot it produces exists, but every run needs a bot
+    to execute against. This is that placeholder. It is deliberately a fixed path rather than a
+    `/bots/{bot_id}` route so a client can never mistake it for an artifact.
+    """
+    return bot_to_dict(await service.builder_bot(workspace, settings))
 
 
 @router.get("/{bot_id}")

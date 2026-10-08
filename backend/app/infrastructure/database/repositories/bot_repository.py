@@ -15,6 +15,7 @@ from app.domain.bots import (
     BotMetrics,
     BotStatus,
     BotType,
+    BotVariable,
     BotVersion,
     DeterministicRule,
 )
@@ -31,6 +32,7 @@ def snapshot_of(bot: Bot) -> dict[str, Any]:
         "tool_ids": list(bot.tool_ids),
         "knowledge_ids": list(bot.knowledge_ids),
         "deterministic_rules": [rule.model_dump() for rule in bot.deterministic_rules],
+        "variables": [variable.model_dump() for variable in bot.variables],
         "bot_type": str(bot.bot_type),
     }
 
@@ -51,6 +53,7 @@ def version_from_snapshot(row: BotVersionRow) -> BotVersion:
         deterministic_rules=tuple(
             DeterministicRule.model_validate(rule) for rule in snapshot.get("deterministic_rules", [])
         ),
+        variables=tuple(BotVariable.model_validate(v) for v in snapshot.get("variables", [])),
     )
 
 
@@ -72,6 +75,7 @@ def to_domain(row: BotRow, versions: list[BotVersionRow] | None = None) -> Bot:
         tool_ids=list(row.tool_ids or []),
         knowledge_ids=list(row.knowledge_ids or []),
         deterministic_rules=[DeterministicRule.model_validate(r) for r in row.deterministic_rules or []],
+        variables=[BotVariable.model_validate(v) for v in row.variables or []],
         temperature=row.temperature,
         top_p=row.top_p,
         max_output_tokens=row.max_output_tokens,
@@ -85,6 +89,25 @@ def to_domain(row: BotRow, versions: list[BotVersionRow] | None = None) -> Bot:
         updated_at=row.updated_at,
         last_used_at=row.last_used_at,
     )
+
+
+def _rule_payload(rule: DeterministicRule | dict) -> dict:
+    """Serialise one deterministic rule.
+
+    Persistence accepts a plain dict as well as a `DeterministicRule`: an aggregate
+    assembled outside the service layer carries request-shaped values, and failing
+    here would surface as an opaque 500 on a routine save.
+    """
+    if isinstance(rule, dict):
+        return DeterministicRule.model_validate(rule).model_dump()
+    return rule.model_dump()
+
+
+def _variable_payload(variable: BotVariable | dict) -> dict:
+    """Serialise one bot variable, accepting a plain dict for the same reason `_rule_payload` does."""
+    if isinstance(variable, dict):
+        return BotVariable.model_validate(variable).model_dump()
+    return variable.model_dump()
 
 
 def apply_to_row(row: BotRow, bot: Bot) -> BotRow:
@@ -101,7 +124,8 @@ def apply_to_row(row: BotRow, bot: Bot) -> BotRow:
     row.instructions_fa = bot.instructions_fa
     row.tool_ids = list(bot.tool_ids)
     row.knowledge_ids = list(bot.knowledge_ids)
-    row.deterministic_rules = [rule.model_dump() for rule in bot.deterministic_rules]
+    row.deterministic_rules = [_rule_payload(rule) for rule in bot.deterministic_rules]
+    row.variables = [_variable_payload(variable) for variable in bot.variables]
     row.temperature = bot.temperature
     row.top_p = bot.top_p
     row.max_output_tokens = bot.max_output_tokens
@@ -134,7 +158,8 @@ class BotRepository:
             instructions_fa=bot.instructions_fa,
             tool_ids=list(bot.tool_ids),
             knowledge_ids=list(bot.knowledge_ids),
-            deterministic_rules=[rule.model_dump() for rule in bot.deterministic_rules],
+            deterministic_rules=[_rule_payload(rule) for rule in bot.deterministic_rules],
+            variables=[_variable_payload(variable) for variable in bot.variables],
             temperature=bot.temperature,
             top_p=bot.top_p,
             max_output_tokens=bot.max_output_tokens,
@@ -176,26 +201,33 @@ class BotRepository:
         )
         return [to_domain(row, row.versions) for row in result.scalars().all()]
 
-    async def update(self, bot: Bot, *, version: BotVersion, notes: str) -> Bot:
-        """Mutate the aggregate row *and* append a new immutable version in one transaction."""
+    async def update(self, bot: Bot, *, version: BotVersion | None, notes: str) -> Bot:
+        """Mutate the aggregate row *and*, when the behaviour changed, append a new version.
+
+        `version=None` means "nothing about the behaviour changed" (a rename, a new
+        description, a new avatar). Versions are immutable snapshots and `(bot_id,
+        version)` is unique, so re-inserting the current label would fail — a
+        presentation-only save must not create history.
+        """
         row = await self._row(bot.bot_id, bot.workspace_id)
         if row is None:
             raise LookupError(f"bot {bot.bot_id!r} not found in workspace {bot.workspace_id!r}")
         previous = [version_from_snapshot(v) for v in row.versions]
         apply_to_row(row, bot)
-        self._session.add(
-            BotVersionRow(
-                version_id=version.version_id,
-                bot_id=bot.bot_id,
-                workspace_id=bot.workspace_id,
-                version=version.version,
-                notes=notes,
-                snapshot=snapshot_of(bot),
-                created_at=version.created_at,
+        if version is not None:
+            self._session.add(
+                BotVersionRow(
+                    version_id=version.version_id,
+                    bot_id=bot.bot_id,
+                    workspace_id=bot.workspace_id,
+                    version=version.version,
+                    notes=notes,
+                    snapshot=snapshot_of(bot),
+                    created_at=version.created_at,
+                )
             )
-        )
         await self._session.flush()
-        bot.versions = [version, *previous]
+        bot.versions = [version, *previous] if version is not None else previous
         return bot
 
     async def versions(self, bot_id: str, workspace_id: str) -> list[BotVersion]:
@@ -209,6 +241,23 @@ class BotRepository:
     async def version(self, version_id: str) -> BotVersion | None:
         row = await self._get_version_row(version_id)
         return version_from_snapshot(row) if row else None
+
+    async def find_builder(self, workspace_id: str) -> Bot | None:
+        row = await self._session.scalar(
+            select(BotRow)
+            .options(selectinload(BotRow.versions))
+            .where(BotRow.workspace_id == workspace_id, BotRow.is_builder.is_(True))
+            .limit(1)
+        )
+        return to_domain(row, row.versions) if row else None
+
+    async def add_builder(self, bot: Bot, *, version: BotVersion) -> Bot:
+        """Persist a builder host. Separate from `add` so only this path can set the marker."""
+        created = await self.add(bot, version=version)
+        row = await self._row(bot.bot_id, bot.workspace_id)
+        if row is not None:
+            row.is_builder = True
+        return created
 
     async def touch_usage(self, bot_id: str, *, last_used_at: datetime, metrics: BotMetrics) -> None:
         row = await self._session.get(BotRow, bot_id)

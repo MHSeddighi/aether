@@ -85,11 +85,16 @@ class BotRow(Base, TimestampMixin):
     tool_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     knowledge_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     deterministic_rules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    variables: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     temperature: Mapped[float] = mapped_column(Float, nullable=False, default=0.3)
     top_p: Mapped[float] = mapped_column(Float, nullable=False, default=0.95)
     max_output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=2048)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    #: Marks the single per-workspace bot that hosts a builder conversation before the bot it is
+    #: building exists. Infrastructure bookkeeping, so it is deliberately absent from the `Bot`
+    #: aggregate and never appears in `bot_to_dict`.
+    is_builder: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     version: Mapped[str] = mapped_column(String(32), nullable=False, default="1.0.0")
     metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     billing_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB)

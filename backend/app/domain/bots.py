@@ -52,6 +52,59 @@ class DeterministicRule(BaseModel):
         return value.strip()
 
 
+#: Variables are referenced from instructions as `{{name}}`. The name is what the model prompt
+#: writer scans for, so it is restricted to an identifier-safe subset rather than free text.
+VARIABLE_NAME_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
+
+
+class BotVariable(BaseModel):
+    """A named constant declared on a bot and injected into its prompt at run time.
+
+    Frozen for the same reason `DeterministicRule` is: it lives inside an immutable version
+    snapshot (Rule 36).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(pattern=VARIABLE_NAME_PATTERN, max_length=64)
+    value: str = Field(default="", max_length=8000)
+    description: str = Field(default="", max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("variable name must not be blank")
+        return value.strip()
+
+
+def render_instructions(instructions: str, variables: list[BotVariable]) -> str:
+    """Substitute `{{name}}` placeholders with the bot's declared variable values.
+
+    An unknown placeholder is left alone rather than replaced with an empty string: a blanked-out
+    `{{region}}` reads as a complete sentence to the model, whereas `{{region}}` reads as a bug.
+    """
+    if not variables:
+        return instructions
+    values = {variable.name: variable.value for variable in variables}
+    out: list[str] = []
+    index = 0
+    while index < len(instructions):
+        start = instructions.find("{{", index)
+        if start == -1:
+            out.append(instructions[index:])
+            break
+        end = instructions.find("}}", start + 2)
+        if end == -1:
+            out.append(instructions[index:])
+            break
+        key = instructions[start + 2 : end].strip()
+        out.append(instructions[index:start])
+        out.append(values.get(key, instructions[start : end + 2]))
+        index = end + 2
+    return "".join(out)
+
+
 class BotMetrics(BaseModel):
     """Aggregated counters; the frontend renders these directly."""
 
@@ -88,10 +141,16 @@ class BotVersion(BaseModel):
     tool_ids: tuple[str, ...] = ()
     knowledge_ids: tuple[str, ...] = ()
     deterministic_rules: tuple[DeterministicRule, ...] = ()
+    variables: tuple[BotVariable, ...] = ()
 
     @property
     def label(self) -> str:
         return self.model_spec.label
+
+    @property
+    def resolved_instructions(self) -> str:
+        """The instructions a run actually executes, after variable substitution."""
+        return render_instructions(self.instructions, list(self.variables))
 
 
 class Bot(BaseModel):
@@ -113,6 +172,7 @@ class Bot(BaseModel):
     tool_ids: list[str] = Field(default_factory=list)
     knowledge_ids: list[str] = Field(default_factory=list)
     deterministic_rules: list[DeterministicRule] = Field(default_factory=list)
+    variables: list[BotVariable] = Field(default_factory=list)
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
     top_p: float = Field(default=0.95, ge=0.0, le=1.0)
     max_output_tokens: int = Field(default=2048, ge=16, le=131072)
@@ -125,6 +185,14 @@ class Bot(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_used_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _unique_variable_names(self) -> Self:
+        names = [variable.name for variable in self.variables]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"variable names must be unique, repeated: {duplicates}")
+        return self
 
     @model_validator(mode="after")
     def _type_specific_invariants(self) -> Self:
@@ -159,6 +227,11 @@ class Bot(BaseModel):
 
     def latest_version(self) -> BotVersion | None:
         return self.versions[0] if self.versions else None
+
+    @property
+    def resolved_instructions(self) -> str:
+        """The current instructions after variable substitution — the preview a run executes."""
+        return render_instructions(self.instructions, self.variables)
 
     def match_rule(self, text: str) -> DeterministicRule | None:
         lowered = text.lower()
@@ -233,6 +306,7 @@ def bot_to_dict(bot: Bot) -> dict[str, Any]:
         "toolIds": list(bot.tool_ids),
         "knowledgeIds": list(bot.knowledge_ids),
         "deterministicRules": [r.model_dump() for r in bot.deterministic_rules],
+        "variables": [v.model_dump() for v in bot.variables],
         "temperature": bot.temperature,
         "topP": bot.top_p,
         "maxOutputTokens": bot.max_output_tokens,
@@ -252,8 +326,29 @@ def bot_to_dict(bot: Bot) -> dict[str, Any]:
             }
             for v in bot.versions
         ],
-        "metrics": bot.metrics.model_dump(),
-        "billingUsage": bot.billing_usage.model_dump() if bot.billing_usage else None,
+        # camelCase, like every other field on the wire: the frontend's `BotMetrics`
+        # and `BotBillingUsage` interfaces are camelCase, and `model_dump()` would
+        # hand them snake_case keys.
+        "metrics": {
+            "totalRuns": bot.metrics.total_runs,
+            "avgLatencyMs": bot.metrics.avg_latency_ms,
+            "tokensConsumed": bot.metrics.tokens_consumed,
+            "successRatePercent": bot.metrics.success_rate_percent,
+        },
+        "billingUsage": (
+            {
+                "monthlyEstimatedCost": bot.billing_usage.monthly_estimated_cost,
+                "inputTokens": bot.billing_usage.input_tokens,
+                "outputTokens": bot.billing_usage.output_tokens,
+                "cachedTokens": bot.billing_usage.cached_tokens,
+                "costPerThousandRequests": bot.billing_usage.cost_per_thousand_requests,
+                "rpmQuota": bot.billing_usage.rpm_quota,
+                "tpmQuota": bot.billing_usage.tpm_quota,
+                "monthlyBudgetCap": bot.billing_usage.monthly_budget_cap,
+            }
+            if bot.billing_usage
+            else None
+        ),
         "lastUsed": _relative(bot.last_used_at) if bot.last_used_at else "Never",
     }
 

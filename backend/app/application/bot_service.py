@@ -15,6 +15,9 @@ from app.domain.failures import FailureReason, ValidationFailure
 from app.domain.ids import new_id
 from app.domain.models import Provider, ensure_valid_bot_model
 
+#: Reserved name of the per-workspace builder host (see `BotService.builder_bot`).
+BUILDER_BOT_NAME = "Builder"
+
 
 class BotNotFound(Exception):
     """Missing *or* owned by another workspace. One exception so scoping cannot leak (Rule 42)."""
@@ -59,11 +62,48 @@ class BotService:
             changes = {**changes, "status": BotStatus.DRAFT}
         updated = _apply(bot, changes)
         _validate(updated)
+        if updated.version == bot.version:
+            # Presentation-only change (rename, description, avatar): the aggregate moves,
+            # but nothing behavioural did, so no new version is recorded.
+            return await self._bots.update(updated, version=None, notes=notes)
         version = _version_for(updated, notes or f"Updated to {updated.version}")
         return await self._bots.update(updated, version=version, notes=notes)
 
     async def archive(self, workspace_id: str, bot_id: str) -> Bot:
         return await self.update(workspace_id, bot_id, {"status": BotStatus.ARCHIVED}, notes="Archived")
+
+    async def builder_bot(self, workspace_id: str, settings) -> Bot:
+        """The per-workspace bot that hosts a builder conversation.
+
+        A run needs *some* bot to execute against, but a builder chat has to exist before the bot
+        it builds does, so this placeholder is provisioned on demand instead of by a seed script.
+        It is never surfaced as a build artifact.
+
+        `settings` is passed in from the caller's dependency graph rather than read from a
+        process-wide singleton, matching `BotFields.to_draft`.
+        """
+        existing = await self._bots.find_builder(workspace_id)
+        if existing is not None:
+            return existing
+        provider = Provider(settings.default_provider)
+        draft = Bot(
+            bot_id=new_id("bot"),
+            workspace_id=workspace_id,
+            name=BUILDER_BOT_NAME,
+            description="Hosts builder conversations. It is never shown as a build artifact.",
+            provider=provider,
+            model_id=settings.default_model_id_for(str(provider)),
+            instructions=(
+                "You are a software designer. When asked for a bot, describe the bot you would build. "
+                "You are not the bot yourself."
+            ),
+            temperature=settings.default_temperature,
+            top_p=settings.default_top_p,
+            max_output_tokens=settings.default_max_output_tokens,
+            status=BotStatus.DRAFT,
+        )
+        _validate(draft)
+        return await self._bots.add_builder(draft, version=_version_for(draft, "Builder host"))
 
     async def versions(self, workspace_id: str, bot_id: str) -> list[BotVersion]:
         await self.get(workspace_id, bot_id)  # ownership check even when no versions exist
@@ -95,11 +135,18 @@ def _version_for(bot: Bot, notes: str) -> BotVersion:
         tool_ids=tuple(bot.tool_ids),
         knowledge_ids=tuple(bot.knowledge_ids),
         deterministic_rules=tuple(bot.deterministic_rules),
+        variables=tuple(bot.variables),
     )
 
 
 def _apply(bot: Bot, changes: dict) -> Bot:
-    """Apply a partial update, bumping the version label whenever behaviour changes."""
+    """Apply a partial update, bumping the version label whenever behaviour changes.
+
+    The merged payload is rebuilt through `model_validate` rather than patched with
+    `model_copy(update=...)`: a copy skips validation, so request payloads (which
+    arrive as plain dicts) would replace `deterministic_rules` with raw dicts and
+    only blow up much later, in the repository, as a 500.
+    """
     behaviour_fields = {
         "provider",
         "model_id",
@@ -111,6 +158,7 @@ def _apply(bot: Bot, changes: dict) -> Bot:
         "tool_ids",
         "knowledge_ids",
         "deterministic_rules",
+        "variables",
         "bot_type",
     }
     unknown = set(changes) - set(Bot.model_fields)
@@ -121,7 +169,14 @@ def _apply(bot: Bot, changes: dict) -> Bot:
             details={"fields": sorted(unknown)},
         )
     next_version = bump_minor(bot.version) if behaviour_fields & set(changes) else bot.version
-    return bot.model_copy(update={**changes, "version": next_version, "updated_at": datetime.now(UTC)})
+    return Bot.model_validate(
+        {
+            **bot.model_dump(),
+            **changes,
+            "version": next_version,
+            "updated_at": datetime.now(UTC),
+        }
+    )
 
 
 def _validate(bot: Bot) -> None:

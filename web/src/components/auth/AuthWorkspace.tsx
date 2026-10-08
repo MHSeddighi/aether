@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useWorkspace } from '../../context/WorkspaceContext';
-import { writeRoute } from '../../lib/router';
 import { Sparkles, Mail, Lock, User, ArrowRight, ArrowLeft, Check } from 'lucide-react';
 
 type AuthMode = 'signin' | 'signup';
 
 const fieldBase =
-  'w-full h-11 ps-10 pe-3 rounded-lg bg-[var(--md-sys-color-surface-container)] text-sm text-[var(--md-sys-color-on-surface)] placeholder:text-[var(--md-sys-color-on-surface-variant)] outline-none focus:outline-none transition-colors';
+  'w-full h-11 ps-10 pe-3 rounded-lg bg-[var(--md-sys-color-surface-container-high)] border border-[var(--md-sys-color-outline)] text-sm text-[var(--md-sys-color-on-surface)] placeholder:text-[var(--md-sys-color-on-surface-variant)] outline-none focus:outline-none focus:border-[var(--md-sys-color-primary)] focus:ring-1 focus:ring-[var(--md-sys-color-primary)] transition-colors';
 const labelBase = 'block text-xs font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1.5';
 
 export const AuthWorkspace: React.FC = () => {
   const { signIn, signUp, t, isRTL } = useWorkspace();
-  const [mode, setMode] = useState<AuthMode>('signin');
+  const navigate = useNavigate();
+  const location = useRouterState({ select: (state) => state.location.pathname });
+  // The URL is authoritative, so a deep link to /signup opens sign-up.
+  const [mode, setMode] = useState<AuthMode>(location.endsWith('/signup') ? 'signup' : 'signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -66,11 +69,11 @@ export const AuthWorkspace: React.FC = () => {
   const switchMode = (next: AuthMode) => {
     setMode(next);
     setError(null);
-    writeRoute({ section: 'auth' });
+    void navigate({ to: next === 'signup' ? '/signup' : '/login', replace: true });
   };
 
   return (
-    <div className="relative min-h-screen w-full bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)] overflow-y-auto">
+    <div className="relative min-h-full w-full bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)]">
       {/* Backdrop: swap in your own asset by replacing /auth-backdrop.svg */}
       <img
         src="/auth-backdrop.svg"
@@ -80,7 +83,7 @@ export const AuthWorkspace: React.FC = () => {
       />
       <div className="fixed inset-0 bg-gradient-to-b from-[var(--md-sys-color-surface)]/70 via-[var(--md-sys-color-surface)]/60 to-[var(--md-sys-color-surface)]/95 pointer-events-none" />
 
-      <div className="relative min-h-screen flex items-center justify-center px-4 py-10">
+      <div className="relative min-h-full flex items-start justify-center px-4 py-8 sm:py-10">
         <div className="w-full max-w-sm">
           {/* Brand */}
           <div className="flex items-center gap-2.5 mb-8">

@@ -75,7 +75,11 @@ async def test_live_json_schema(live_client) -> None:
     completion = await client.complete(
         GenerationRequest(
             model=config,
-            messages=(user_message('Return a bot named "Testy" with description "d" and temperature 0.2.'),),
+            messages=(
+                user_message(
+                    'Return a JSON object for a bot named "Testy" with description "d" and temperature 0.2.'
+                ),
+            ),
             response_schema={
                 "title": "BotProposal",
                 "type": "object",

@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import {
   MessageSquarePlus,
+  MessageSquare,
+  LogOut,
   Bot,
   Wrench,
   Database,
@@ -18,9 +21,12 @@ import { MainSection } from '../../context/WorkspaceContext';
 import { MagicalAgentIcon } from '../ui/MagicalAgentIcon';
 
 export const UnifiedSidebar: React.FC = () => {
+  const navigate = useNavigate();
+  const activeSection = useRouterState({
+    select: (state) => state.location.pathname.split('/').filter(Boolean)[0] ?? 'chat',
+  });
+
   const {
-    currentSection,
-    setCurrentSection,
     isSidebarCollapsed,
     setIsSidebarCollapsed,
     isMobileDrawerOpen,
@@ -29,9 +35,12 @@ export const UnifiedSidebar: React.FC = () => {
     activeConversationId,
     selectConversation,
     startNewChat,
+    goToChat,
     deleteConversation,
     renameConversation,
     account,
+    profile,
+    signOut,
     setIsCommandPaletteOpen,
     t,
     isRTL,
@@ -39,13 +48,18 @@ export const UnifiedSidebar: React.FC = () => {
 
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
-  const [historyFilter, setHistoryFilter] = useState<'all' | 'bots' | 'tools' | 'chat'>('all');
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'bots' | 'tools'>('all');
+  const [comingSoon, setComingSoon] = useState<string | null>(null);
+
+  const showComingSoon = (label: string) => {
+    setComingSoon(label);
+    window.setTimeout(() => setComingSoon(null), 3000);
+  };
 
   // Filter conversations across bot generations, tool generations, and chats
   const filteredConversations = conversations.filter((c) => {
     if (historyFilter === 'bots') return c.mode === 'agent-bot' || c.mode === 'simple-bot' || c.title.toLowerCase().includes('bot');
     if (historyFilter === 'tools') return c.mode === 'tool-building' || c.title.toLowerCase().includes('tool');
-    if (historyFilter === 'chat') return !c.mode || (!c.title.toLowerCase().includes('bot') && !c.title.toLowerCase().includes('tool'));
     return true;
   });
 
@@ -56,6 +70,11 @@ export const UnifiedSidebar: React.FC = () => {
   const pastChats = filteredConversations.filter(
     (c) => c.category !== 'today'
   );
+
+  const handleNewConversation = () => {
+    startNewChat();
+    void navigate({ to: '/chat' });
+  };
 
   const handleStartRename = (e: React.MouseEvent, id: string, title: string) => {
     e.stopPropagation();
@@ -81,9 +100,20 @@ export const UnifiedSidebar: React.FC = () => {
     section: MainSection,
     label: string,
     Icon: React.ElementType,
-    count?: number
+    count?: number,
+    options?: { disabled?: boolean }
   ) => {
-    const isActive = currentSection === section;
+    const isActive = activeSection === section;
+    const disabled = options?.disabled ?? false;
+    const activate = () => {
+      if (disabled) {
+        showComingSoon(label);
+        return;
+      }
+      if (section === 'chat') goToChat();
+      void navigate({ to: `/${section}` });
+      setIsMobileDrawerOpen(false);
+    };
 
     if (isSidebarCollapsed) {
       // Centered M3 Navigation Rail item with active pill indicator
@@ -91,12 +121,13 @@ export const UnifiedSidebar: React.FC = () => {
         <button
           key={section}
           type="button"
-          onClick={() => {
-            setCurrentSection(section);
-            setIsMobileDrawerOpen(false);
-          }}
-          className="w-full flex flex-col items-center justify-center py-1 group focus:outline-none"
-          title={label}
+          onClick={activate}
+          aria-disabled={disabled}
+          data-testid={`nav-${section}`}
+          className={`w-full flex flex-col items-center justify-center py-1 group focus:outline-none ${
+            disabled ? 'opacity-45 cursor-not-allowed' : ''
+          }`}
+          title={disabled ? `${label} · ${t.comingSoon}` : label}
         >
           <div
             className={`w-12 h-8 rounded-full flex items-center justify-center transition-colors ${
@@ -125,12 +156,13 @@ export const UnifiedSidebar: React.FC = () => {
       <button
         key={section}
         type="button"
-        onClick={() => {
-          setCurrentSection(section);
-          setIsMobileDrawerOpen(false);
-        }}
+        onClick={activate}
+        aria-disabled={disabled}
+        data-testid={`nav-${section}`}
         className={`w-full h-11 flex items-center justify-between px-3 rounded-2xl text-xs font-medium transition-colors group focus:outline-none ${
-          isActive
+          disabled
+            ? 'opacity-45 cursor-not-allowed text-[var(--md-sys-color-on-surface-variant)]'
+            : isActive
             ? 'bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)] font-semibold'
             : 'text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)]'
         }`}
@@ -138,17 +170,23 @@ export const UnifiedSidebar: React.FC = () => {
         <div className="flex items-center gap-3 min-w-0">
           <Icon
             className={`w-5 h-5 shrink-0 transition-colors ${
-              isActive
+              isActive && !disabled
                 ? 'text-[var(--md-sys-color-on-secondary-container)]'
                 : 'text-[var(--md-sys-color-on-surface-variant)] group-hover:text-[var(--md-sys-color-on-surface)]'
             }`}
           />
           <span className="truncate text-xs">{label}</span>
         </div>
-        {count !== undefined && (
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--md-sys-color-surface-container-highest)] text-[var(--md-sys-color-on-surface-variant)]">
-            {count}
+        {disabled ? (
+          <span className="text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-[var(--md-sys-color-surface-container-highest)] text-[var(--md-sys-color-on-surface-variant)]">
+            {t.comingSoon}
           </span>
+        ) : (
+          count !== undefined && (
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--md-sys-color-surface-container-highest)] text-[var(--md-sys-color-on-surface-variant)]">
+              {count}
+            </span>
+          )
         )}
       </button>
     );
@@ -160,30 +198,35 @@ export const UnifiedSidebar: React.FC = () => {
         isSidebarCollapsed ? 'px-2 py-3 items-center' : 'p-3'
       }`}
     >
-      {/* Top Block: Product Brand Name & Icon + New Chat + Destinations */}
+      {/* Top Block: Product brand + destinations */}
       <div className={`shrink-0 w-full ${isSidebarCollapsed ? 'space-y-4' : 'space-y-3'}`}>
-        {/* Product Brand Row (Distinctive vibrant logo icon) */}
+        {/* Product Brand Row — amber into blue, and the brand is the way home. */}
         {isSidebarCollapsed ? (
           <div className="flex flex-col items-center justify-center pt-1">
-            <div
-              className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#FF512F] via-[#DD2476] to-[#405DE6] flex items-center justify-center text-white shadow-md shadow-pink-500/20"
-              title="Aetheris Studio"
+            <button
+              type="button"
+              onClick={() => navigate({ to: '/chat' })}
+              className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-blue-600 flex items-center justify-center text-white shadow-md shadow-amber-500/25 transition-transform hover:scale-105"
+              title={t.appName}
+              aria-label={t.appName}
             >
-              <Sparkles className="w-5 h-5 fill-white/20 stroke-[2.2]" />
-            </div>
+              <Sparkles className="w-5 h-5 fill-white/25 stroke-[2.2]" />
+            </button>
           </div>
         ) : (
           <div className="flex items-center justify-between px-2 py-1.5">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#FF512F] via-[#DD2476] to-[#405DE6] flex items-center justify-center text-white shrink-0 shadow-md shadow-pink-500/20">
-                <Sparkles className="w-4 h-4 fill-white/20 stroke-[2.2]" />
-              </div>
-              <div className="min-w-0">
-                <span className="text-xs font-bold text-[var(--md-sys-color-on-surface)] block truncate tracking-tight">
-                  {t.appName || 'Aetheris Studio'}
-                </span>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => navigate({ to: '/chat' })}
+              className="flex items-center gap-2.5 min-w-0 text-start"
+            >
+              <span className="w-9 h-9 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-blue-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-amber-500/25">
+                <Sparkles className="w-4 h-4 fill-white/25 stroke-[2.2]" />
+              </span>
+              <span className="text-xs font-bold text-[var(--md-sys-color-on-surface)] truncate tracking-tight">
+                {t.appName}
+              </span>
+            </button>
 
             <button
               onClick={() => setIsCommandPaletteOpen(true)}
@@ -198,48 +241,55 @@ export const UnifiedSidebar: React.FC = () => {
           </div>
         )}
 
-        {/* ＋ New Chat Button: Standard Material 3 Prominent Button */}
-        {isSidebarCollapsed ? (
-          <div className="flex justify-center w-full">
-            <button
-              type="button"
-              onClick={() => startNewChat()}
-              className="w-12 h-12 rounded-2xl bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] flex items-center justify-center shadow-sm hover:opacity-95 transition-all active:scale-95"
-              title={t.newChat}
-            >
-              <MessageSquarePlus className="w-5 h-5 stroke-[2.2]" />
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => startNewChat()}
-            className="w-full h-11 flex items-center justify-center gap-2 px-4 rounded-2xl bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] font-medium text-xs shadow-sm hover:opacity-95 transition-all active:scale-98"
-          >
-            <MessageSquarePlus className="w-4 h-4 stroke-[2.2]" />
-            <span className="font-semibold">{t.newChat}</span>
-          </button>
-        )}
-
         {/* Primary Destinations conforming to MUI v3 */}
         <nav className={`w-full ${isSidebarCollapsed ? 'space-y-1.5 pt-1' : 'space-y-1 pt-1'}`}>
+          {isSidebarCollapsed && (
+            <button
+              type="button"
+              onClick={handleNewConversation}
+              data-testid="new-chat"
+              className="w-full flex flex-col items-center justify-center py-1 group focus:outline-none"
+              title={t.newConversation}
+            >
+              <div className="w-12 h-8 rounded-full flex items-center justify-center text-[var(--md-sys-color-on-surface-variant)] group-hover:text-[var(--md-sys-color-on-surface)] group-hover:bg-[var(--md-sys-color-surface-container-high)] transition-colors">
+                <MessageSquarePlus className="w-4 h-4" />
+              </div>
+              <span className="text-[10px] font-medium tracking-tight mt-1 text-center truncate max-w-[68px]">
+                {t.newConversation}
+              </span>
+            </button>
+          )}
+          {renderNavDestination('chat', t.chat, MessageSquare)}
           {renderNavDestination('bots', t.bots, Bot)}
-          {renderNavDestination('tools', t.tools, Wrench)}
-          {renderNavDestination('knowledge', t.knowledge, Database)}
+          {renderNavDestination('tools', t.tools, Wrench, undefined, { disabled: true })}
+          {renderNavDestination('knowledge', t.knowledge, Database, undefined, { disabled: true })}
         </nav>
       </div>
 
       {/* Middle Block: Conversation History (Only in expanded drawer mode) */}
       {!isSidebarCollapsed && (
         <div className="flex-1 overflow-y-auto py-2 my-1 border-t border-[var(--md-sys-color-outline-variant)] space-y-2">
+          {/* History header doubles as the New Conversation action: one quiet row
+              instead of a primary button stacked above the section list. */}
           <div className="flex items-center justify-between px-2 text-[10px] font-mono uppercase tracking-wider text-[var(--md-sys-color-on-surface-variant)] opacity-80">
-            <span>{t.history}</span>
-            <span className="text-[9px]">{filteredConversations.length}</span>
+            <span>
+              {t.history} <span className="text-[9px]">{filteredConversations.length}</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleNewConversation}
+              data-testid="new-chat"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-sans font-semibold normal-case tracking-normal text-[var(--md-sys-color-on-surface)] bg-[var(--md-sys-color-surface-container-high)] hover:bg-[var(--md-sys-color-surface-container-highest)] transition-colors"
+              title={t.newConversation}
+            >
+              <MessageSquarePlus className="w-3 h-3 stroke-[2.2]" />
+              <span>{t.newConversation}</span>
+            </button>
           </div>
 
-          {/* Category Filter Pills: All / Bots / Tools / Chat */}
+          {/* Category Filter Pills: All / Bots / Tools */}
           <div className="px-1 flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {(['all', 'bots', 'tools', 'chat'] as const).map((cat) => (
+            {(['all', 'bots', 'tools'] as const).map((cat) => (
               <button
                 key={cat}
                 type="button"
@@ -250,7 +300,7 @@ export const UnifiedSidebar: React.FC = () => {
                     : 'text-[var(--md-sys-color-on-surface-variant)] hover:bg-[var(--md-sys-color-surface-container)]'
                 }`}
               >
-                {cat === 'all' ? t.all : cat === 'bots' ? t.bots : cat === 'tools' ? t.tools : 'Chat'}
+                {cat === 'all' ? t.all : cat === 'bots' ? t.bots : t.tools}
               </button>
             ))}
           </div>
@@ -271,8 +321,10 @@ export const UnifiedSidebar: React.FC = () => {
                     <div
                       key={conv.id}
                       onClick={() => selectConversation(conv.id)}
+                      data-testid="conversation-item"
+                      data-conversation-id={conv.id}
                       className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                        activeConversationId === conv.id && currentSection === 'chat'
+                        activeConversationId === conv.id && activeSection === 'chat'
                           ? 'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] font-medium shadow-2xs'
                           : 'text-[var(--md-sys-color-on-surface-variant)] hover:bg-[var(--md-sys-color-surface-container)] hover:text-[var(--md-sys-color-on-surface)]'
                       }`}
@@ -289,6 +341,7 @@ export const UnifiedSidebar: React.FC = () => {
                             onChange={(e) => setEditingTitle(e.target.value)}
                             onBlur={() => setEditingChatId(null)}
                             autoFocus
+                            data-testid="conversation-rename-input"
                             className="w-full bg-[var(--md-sys-color-surface-container-highest)] px-1.5 py-0.5 rounded text-xs text-[var(--md-sys-color-on-surface)] focus:outline-none"
                           />
                         </form>
@@ -308,6 +361,7 @@ export const UnifiedSidebar: React.FC = () => {
                             </button>
                             <button
                               onClick={(e) => handleDelete(e, conv.id)}
+                              data-testid="conversation-delete"
                               className="p-1 rounded hover:bg-[var(--md-sys-color-surface-container-highest)] text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-error)]"
                               title={t.delete}
                             >
@@ -331,8 +385,10 @@ export const UnifiedSidebar: React.FC = () => {
                     <div
                       key={conv.id}
                       onClick={() => selectConversation(conv.id)}
+                      data-testid="conversation-item"
+                      data-conversation-id={conv.id}
                       className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                        activeConversationId === conv.id && currentSection === 'chat'
+                        activeConversationId === conv.id && activeSection === 'chat'
                           ? 'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] font-medium shadow-2xs'
                           : 'text-[var(--md-sys-color-on-surface-variant)] hover:bg-[var(--md-sys-color-surface-container)] hover:text-[var(--md-sys-color-on-surface)]'
                       }`}
@@ -344,6 +400,7 @@ export const UnifiedSidebar: React.FC = () => {
                       <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity shrink-0">
                         <button
                           onClick={(e) => handleDelete(e, conv.id)}
+                          data-testid="conversation-delete"
                           className="p-1 rounded hover:bg-[var(--md-sys-color-surface-container-highest)] text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-error)]"
                           title={t.delete}
                         >
@@ -371,18 +428,20 @@ export const UnifiedSidebar: React.FC = () => {
           Settings
         )}
 
+        {/* The signed-in account: initials, name, email and live plan — all read
+            from the session, never hard-coded. */}
         {isSidebarCollapsed ? (
           <div className="flex flex-col items-center gap-2 pt-1 w-full">
-            {/* Centered User Initials */}
-            {/* Profile Avatar with vibrant gradient */}
-            <div
-              className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white flex items-center justify-center font-bold text-[11px] shadow-sm"
-              title="Alex Mercer (alex.mercer@agency.dev)"
+            <button
+              type="button"
+              onClick={() => navigate({ to: '/settings' })}
+              className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 via-orange-500 to-blue-600 text-white flex items-center justify-center font-bold text-[11px] shadow-sm"
+              title={`${profile.name} (${profile.email})`}
+              data-testid="profile-avatar"
             >
-              AM
-            </div>
+              {profile.initials}
+            </button>
 
-            {/* Centered Collapse Toggle Button */}
             <button
               type="button"
               onClick={() => setIsSidebarCollapsed(false)}
@@ -393,23 +452,44 @@ export const UnifiedSidebar: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="flex items-center justify-between pt-1 px-1">
-            <div className="flex items-center gap-2.5 text-xs text-[var(--md-sys-color-on-surface)] min-w-0">
-              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white flex items-center justify-center font-bold text-[10px] shrink-0 shadow-sm">
-                AM
-              </div>
-              <div className="min-w-0">
-                <span className="truncate block font-medium max-w-[120px]">Alex Mercer</span>
-                <span className="text-[10px] text-[var(--md-sys-color-on-surface-variant)] block truncate max-w-[120px]">
-                  alex.mercer@agency.dev
+          <div className="flex items-center justify-between pt-1 px-1 gap-1">
+            <button
+              type="button"
+              onClick={() => navigate({ to: '/settings' })}
+              className="flex items-center gap-2.5 text-xs text-[var(--md-sys-color-on-surface)] min-w-0 flex-1 text-start rounded-lg px-1 py-1 -mx-1 hover:bg-[var(--md-sys-color-surface-container-high)] transition-colors"
+              data-testid="profile"
+              title={t.account}
+            >
+              <span className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 via-orange-500 to-blue-600 text-white flex items-center justify-center font-bold text-[10px] shrink-0 shadow-sm">
+                {profile.initials}
+              </span>
+              <span className="min-w-0">
+                <span className="truncate block font-medium max-w-[110px]" data-testid="profile-name">
+                  {profile.name}
                 </span>
-              </div>
-            </div>
+                <span
+                  className="text-[10px] text-[var(--md-sys-color-on-surface-variant)] block truncate max-w-[110px]"
+                  data-testid="profile-email"
+                >
+                  {profile.email}
+                </span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={signOut}
+              className="p-1.5 rounded-full text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-error)] hover:bg-[var(--md-sys-color-surface-container-high)] transition-colors shrink-0"
+              title={t.authSignOut}
+              data-testid="sidebar-sign-out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
 
             <button
               type="button"
               onClick={() => setIsSidebarCollapsed(true)}
-              className="p-1.5 rounded-full text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)] transition-colors"
+              className="p-1.5 rounded-full text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)] transition-colors shrink-0"
               title={t.collapseSidebar}
             >
               {isRTL ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -445,6 +525,16 @@ export const UnifiedSidebar: React.FC = () => {
           >
             {sidebarContent}
           </div>
+        </div>
+      )}
+
+      {/* "Coming soon" toast for disabled destinations */}
+      {comingSoon && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 rounded-xl bg-[var(--md-sys-color-inverse-surface,#1e232e)] text-[var(--md-sys-color-inverse-on-surface,#f1f5f9)] text-xs font-medium shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-150 flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+          <span>
+            {comingSoon} · {t.comingSoon}
+          </span>
         </div>
       )}
     </>

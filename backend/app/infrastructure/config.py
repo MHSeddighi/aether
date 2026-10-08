@@ -36,6 +36,10 @@ class ProviderConfig(BaseModel):
     catalog_url: str | None = None
     fallback_models: list[ModelEntry] = Field(default_factory=list)
     default_model_id: str | None = None
+    #: Whether the provider accepts `response_format={"type": "json_schema", ...}`. Providers that
+    #: only speak the older `json_object` mode (DeepSeek) fall back to it and rely on Pydantic
+    #: validation downstream.
+    json_schema_supported: bool = True
 
     def resolved_api_key(self) -> str | None:
         """API key from the instance or, failing that, from the named environment variable."""
@@ -86,6 +90,8 @@ def _provider_defaults() -> dict[str, ProviderConfig]:
                 ("deepseek-chat", "DeepSeek Chat"),
                 ("deepseek-reasoner", "DeepSeek Reasoner"),
             ],
+            # DeepSeek only supports `response_format={"type": "json_object"}`, not `json_schema`.
+            json_schema_supported=False,
         ),
     }
 

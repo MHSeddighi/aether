@@ -84,7 +84,10 @@ async def load_bot_version(request: RunAgentRequest) -> dict[str, Any]:
         "bot_version_id": version.version_id,
         "bot_version": version.version,
         "bot_type": str(bot_type),
-        "instructions": version.instructions,
+        # Variables are substituted here, once, on the way into the run: the runner and the
+        # prompt builder never need to know they exist, and the substitution is recorded in the
+        # workflow history like every other decision (Rule 36).
+        "instructions": version.resolved_instructions,
         "model": version.model_spec.model_dump(mode="json"),
         "history": [
             {"role": role, "content": content} for role, content in request.history[-MAX_HISTORY_MESSAGES:]

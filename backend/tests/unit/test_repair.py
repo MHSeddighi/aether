@@ -247,20 +247,54 @@ class TestProposalGenerator:
             )
         assert excinfo.value.reason is FailureReason.REPAIR_EXHAUSTED
 
-    async def test_a_schema_valid_but_impossible_proposal_is_rejected(self) -> None:
-        """A schema cannot express "this tool does not exist" — the constraint check must."""
-        payload = {**GOOD_BOT, "tool_ids": ["tool-does-not-exist"]}
+    async def test_an_unknown_tool_is_reported_rather_than_fatal(self) -> None:
+        """Naming a capability the workspace lacks is a legitimate thing to ask for.
+
+        Rejecting it would send the repair prompt back to a model that will invent the same tool
+        again, and the user would get no bot at all. So the id is dropped from the proposal and
+        reported back, and the bot is built from what actually exists.
+        """
+        payload = {**GOOD_BOT, "tool_ids": ["tool-web-search", "order-status-lookup"]}
         fake = FakeModelClient().queue(ScriptedResponse(text=json.dumps(payload)))
-        with pytest.raises(ValidationFailure) as excinfo:
-            await ProposalGenerator(fake, max_repairs=0).bot_proposal(
-                message="x",
-                instructions="",
-                model=MODEL,
-                deadline=Deadline.in_seconds(5),
-                known_tool_ids=("tool-web-search",),
-            )
-        assert excinfo.value.reason is FailureReason.OUTPUT_CONSTRAINT
-        assert "tool-does-not-exist" in excinfo.value.message
+        outcome = await ProposalGenerator(fake, max_repairs=0).bot_proposal(
+            message="x",
+            instructions="",
+            model=MODEL,
+            deadline=Deadline.in_seconds(5),
+            known_tool_ids=("tool-web-search",),
+        )
+        assert outcome.value.tool_ids == ["tool-web-search"]
+        assert outcome.value.unattached_tools == ["order-status-lookup"]
+
+    async def test_the_proposal_inherits_the_run_model(self) -> None:
+        """A designer must not name a model id no provider serves.
+
+        The model is the workspace's decision, so the proposal inherits whatever model is
+        executing it — the one identity already proven to exist.
+        """
+        payload = {**GOOD_BOT, "provider": "openrouter", "model_id": "openai/gpt-3.5-turbo"}
+        fake = FakeModelClient().queue(ScriptedResponse(text=json.dumps(payload)))
+        outcome = await ProposalGenerator(fake, max_repairs=0).bot_proposal(
+            message="x",
+            instructions="",
+            model=MODEL,
+            deadline=Deadline.in_seconds(5),
+        )
+        assert outcome.value.provider == str(MODEL.provider)
+        assert outcome.value.model_id == MODEL.model_id
+
+    async def test_an_unknown_knowledge_source_is_reported_rather_than_fatal(self) -> None:
+        payload = {**GOOD_BOT, "knowledge_ids": ["faq", "missing-source"]}
+        fake = FakeModelClient().queue(ScriptedResponse(text=json.dumps(payload)))
+        outcome = await ProposalGenerator(fake, max_repairs=0).bot_proposal(
+            message="x",
+            instructions="",
+            model=MODEL,
+            deadline=Deadline.in_seconds(5),
+            known_knowledge_ids=("faq",),
+        )
+        assert outcome.value.knowledge_ids == ["faq"]
+        assert outcome.value.unattached_knowledge == ["missing-source"]
 
     async def test_out_of_range_temperature_is_a_constraint_failure(self) -> None:
         payload = {**GOOD_BOT, "temperature": 9}

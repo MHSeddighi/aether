@@ -9,3 +9,8 @@ npm-debug.log*
 !.env.example
 next-env.d.ts
 *.tsbuildinfo
+
+# Playwright
+/e2e/.artifacts
+/playwright-report
+/test-results

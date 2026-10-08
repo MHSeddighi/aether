@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import {
   Search,
@@ -12,14 +13,14 @@ import {
 } from 'lucide-react';
 
 export const CommandPalette: React.FC = () => {
+  const navigate = useNavigate();
   const {
     isCommandPaletteOpen,
     setIsCommandPaletteOpen,
     conversations,
     selectConversation,
     bots,
-    openBotInStudio,
-    setCurrentSection,
+    selectBot,
     tools,
     knowledge,
     t,
@@ -74,7 +75,8 @@ export const CommandPalette: React.FC = () => {
         icon: <Bot className="w-4 h-4 text-[var(--md-sys-color-on-surface-variant)]" />,
         action: () => {
           // Open the review page, not the editor
-          openBotInStudio(b, 'overview');
+          selectBot(b.id);
+          void navigate({ to: '/bots/$botId/overview', params: { botId: b.id } });
         },
       });
     });
@@ -88,7 +90,7 @@ export const CommandPalette: React.FC = () => {
         subtitle: tl.connectionState,
         icon: <Wrench className="w-4 h-4 text-[var(--md-sys-color-on-surface-variant)]" />,
         action: () => {
-          setCurrentSection('tools');
+          void navigate({ to: '/tools' });
         },
       });
     });
@@ -102,13 +104,13 @@ export const CommandPalette: React.FC = () => {
         subtitle: `${kn.sizeFormatted} · ${kn.chunksCount} ${t.chunksIndexed}`,
         icon: <Database className="w-4 h-4 text-[var(--md-sys-color-on-surface-variant)]" />,
         action: () => {
-          setCurrentSection('knowledge');
+          void navigate({ to: '/knowledge' });
         },
       });
     });
 
     return list;
-  }, [conversations, bots, tools, knowledge, t, isRTL, selectConversation, openBotInStudio, setCurrentSection]);
+  }, [conversations, bots, tools, knowledge, t, isRTL, selectConversation, selectBot, navigate]);
 
   const filteredItems = useMemo(() => {
     if (!query.trim()) return items;

@@ -58,6 +58,7 @@ DEEPSEEK = ProviderConfig(
     api_key_env="DEEPSEEK_API_KEY",
     default_model_id="deepseek-chat",
     fallback_models=[("deepseek-chat", "DeepSeek Chat")],
+    json_schema_supported=False,
 )
 
 MODEL = ModelConfig(provider=Provider.OPENCODE, model_id="space-bunny-free", temperature=0.3)
@@ -155,6 +156,16 @@ class TestPayloadRendering:
         assert payload["tool_choice"] == "auto"
         assert payload["response_format"]["type"] == "json_schema"
         assert payload["response_format"]["json_schema"]["name"] == "BotProposal"
+
+    def test_provider_without_json_schema_falls_back_to_json_object(self) -> None:
+        """DeepSeek rejects `json_schema`; the adapter degrades to `json_object` and Pydantic still
+        validates the parsed payload downstream."""
+        client = make_client(DEEPSEEK)
+        payload = client._build_payload(
+            request_for(response_schema={"title": "BotProposal", "type": "object"}),
+            stream=False,
+        )
+        assert payload["response_format"] == {"type": "json_object"}
 
     def test_streaming_requests_usage(self) -> None:
         assert make_client()._build_payload(request_for(), stream=True)["stream_options"] == {

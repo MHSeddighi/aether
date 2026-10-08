@@ -10,6 +10,7 @@
 import type {
   AuthUser,
   BotItem,
+  BotVariable,
   BotVersion,
   ChatConversation,
   ChatMessage,
@@ -231,6 +232,7 @@ export interface BotWrite {
   tool_ids?: string[];
   knowledge_ids?: string[];
   deterministic_rules?: { trigger: string; response: string }[];
+  variables?: BotVariable[];
   temperature?: number;
   top_p?: number;
   max_output_tokens?: number;
@@ -245,6 +247,11 @@ export const botsApi = {
   update: (id: string, body: BotWrite) => request<BotItem>(`/bots/${id}`, { method: 'PATCH', body }),
   remove: (id: string) => request<void>(`/bots/${id}`, { method: 'DELETE' }),
   versions: (id: string) => request<BotVersion[]>(`/bots/${id}/versions`),
+  /**
+   * The per-workspace host a builder conversation runs against before the bot it produces exists.
+   * A fixed path, not an id lookup: a client must never treat the host as a build artifact.
+   */
+  builder: () => request<BotItem>('/bots/builder'),
 };
 
 // --- tools ----------------------------------------------------------------
@@ -303,7 +310,7 @@ export const conversationsApi = {
   create: (body: { bot_id: string; title?: string; mode?: string }) =>
     request<ChatConversation>('/conversations', { method: 'POST', body }),
   get: (id: string) => request<ChatConversation>(`/conversations/${id}`),
-  update: (id: string, body: { title?: string; is_pinned?: boolean }) =>
+  update: (id: string, body: { title?: string; is_pinned?: boolean; bot_id?: string }) =>
     request<ChatConversation>(`/conversations/${id}`, { method: 'PATCH', body }),
   remove: (id: string) => request<void>(`/conversations/${id}`, { method: 'DELETE' }),
   sendMessage: (
@@ -318,6 +325,13 @@ export const runsApi = {
   create: (body: { bot_id: string; input: string; conversation_id?: string; assistant_message_id?: string }) =>
     request<{ run_id: string; status: string }>('/runs', { method: 'POST', body }),
   get: (id: string) => request<RunRecord>(`/runs/${id}`),
+  list: (params: { botId?: string; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.botId) query.set('bot_id', params.botId);
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request<RunRecord[]>(`/runs${suffix}`);
+  },
   cancel: (id: string) => request<{ run_id: string; status: string }>(`/runs/${id}/cancel`, { method: 'POST' }),
   events: (id: string, afterSeq = 0) =>
     request<RunEvent[]>(`/runs/${id}/events?after_seq=${afterSeq}`),

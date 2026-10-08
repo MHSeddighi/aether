@@ -4,15 +4,15 @@
  */
 
 import React from 'react';
-import { WorkspaceProvider } from './context/WorkspaceContext';
-import { AppShell } from './components/layout/AppShell';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { RouterProvider } from '@tanstack/react-router';
+import { queryClient } from './lib/queries';
+import { router } from './routes';
 
 export default function App() {
   return (
-    <WorkspaceProvider>
-      <AppShell />
-    </WorkspaceProvider>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   );
 }
-
-

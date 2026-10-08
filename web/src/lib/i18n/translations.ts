@@ -4,7 +4,13 @@ export interface Translations {
   // Navigation
   workspace: string;
   newChat: string;
+  newConversation: string;
+  pageNotFound: string;
+  backToChat: string;
+  somethingWentWrong: string;
+  retry: string;
   bots: string;
+  chat: string;
   tools: string;
   knowledge: string;
   history: string;
@@ -20,6 +26,7 @@ export interface Translations {
   searchPlaceholder: string;
   collapseSidebar: string;
   expandSidebar: string;
+  comingSoon: string;
 
   // New Chat (Home)
   heroTitle: string;
@@ -92,11 +99,28 @@ export interface Translations {
   testPromptPlaceholder: string;
   version: string;
   totalRuns: string;
-  avgLatency: string;
   tokensConsumed: string;
   successRate: string;
   versionHistory: string;
   conversationsHistory: string;
+
+  // Bot page: view switcher, playground and recent activity
+  viewOverview: string;
+  viewStudio: string;
+  studioTabChat: string;
+  studioTabConfigure: string;
+  atAGlance: string;
+  recentActivity: string;
+  noRunsYet: string;
+  runInput: string;
+  runOutput: string;
+  integrations: string;
+  noDescription: string;
+  playgroundHint: string;
+  botOfferTitle: string;
+  botOfferBody: string;
+  stayInChat: string;
+  noModelDeterministic: string;
   pythonSdk: string;
   typeScriptSdk: string;
   restCurl: string;
@@ -184,7 +208,6 @@ export interface Translations {
   categoryModel: string;
   toolTelemetry: string;
   totalInvocations: string;
-  p99Latency: string;
   lastInvoked: string;
   callsCount: string;
   operational: string;
@@ -277,6 +300,86 @@ export interface Translations {
   addCapability: string;
   adjustHyperparameters: string;
 
+
+  // The studio: conversation-first bot building
+  whatDoYouWantToBuild: string;
+  buildPlaceholder: string;
+  buildHint: string;
+  buildingYourBot: string;
+  yourBotIsReady: string;
+  created: string;
+  previewBot: string;
+  openPreview: string;
+  collapsePreview: string;
+  expandPreview: string;
+  previewTitle: string;
+  liveBot: string;
+  previewEmpty: string;
+  previewPlaceholder: string;
+  artifactDraft: string;
+  artifactReady: string;
+  artifactPublished: string;
+  publish: string;
+  instructionsLabel: string;
+  modelLabel: string;
+  knowledgeLabel: string;
+  toolsLabel: string;
+  variablesLabel: string;
+  noKnowledge: string;
+  noTools: string;
+  noVariables: string;
+  addVariable: string;
+  variableName: string;
+  variableValue: string;
+  variableHint: string;
+  sourceCount: string;
+  botMode: string;
+  comingSoonModes: string;
+  modeMenuTitle: string;
+
+  // The conversation: sender labels, message actions, and the empty state
+  youLabel: string;
+  assistantLabel: string;
+  appTitle: string;
+  editMessage: string;
+  moreActionsLabel: string;
+  runBot: string;
+  newChatLabel: string;
+  whatChanged: string;
+  newResponse: string;
+  attachFilesLabel: string;
+  removeAttachment: string;
+  suggestionSupport: string;
+  suggestionSales: string;
+  suggestionKnowledge: string;
+  chatEmptyHint: string;
+  configureBot: string;
+  botPreviewName: string;
+  // Bot architecture
+  rulesLabel: string;
+  dataLabel: string;
+  actionsLabel: string;
+  noRules: string;
+  botAiLabel: string;
+  botHybridLabel: string;
+  botRulesLabel: string;
+  botDataLabel: string;
+  // Build progress
+  progressUnderstanding: string;
+  progressPlanning: string;
+  progressInstructions: string;
+  progressKnowledge: string;
+  progressData: string;
+  progressActions: string;
+  progressVariables: string;
+  progressPreparing: string;
+  progressTesting: string;
+  progressReady: string;
+  stepFailed: string;
+  detailsLabel: string;
+  suggestionData: string;
+  suggestionDeterministic: string;
+
   // Global & General
   cancel: string;
   save: string;
@@ -291,8 +394,14 @@ export const translations: Record<SupportedLocale, Translations> = {
   en: {
     // Navigation
     workspace: 'Workspace',
-    newChat: 'New Chat',
+    pageNotFound: 'Page not found',
+    backToChat: 'Back to chat',
+    somethingWentWrong: 'Something went wrong',
+    retry: 'Try again',
+    newConversation: 'New Conversation',
+    newChat: 'New Conversation',
     bots: 'Bots',
+    chat: 'Chat',
     tools: 'Tools',
     knowledge: 'Knowledge',
     history: 'History',
@@ -308,6 +417,7 @@ export const translations: Record<SupportedLocale, Translations> = {
     searchPlaceholder: 'Search chats, bots, tools...',
     collapseSidebar: 'Collapse sidebar',
     expandSidebar: 'Expand sidebar',
+    comingSoon: 'Coming soon',
 
     // New Chat (Home)
     heroTitle: 'What can I help you build?',
@@ -380,10 +490,27 @@ export const translations: Record<SupportedLocale, Translations> = {
     testPromptPlaceholder: 'Type a message to simulate this bot...',
     version: 'Version',
     totalRuns: 'Total Executions',
-    avgLatency: 'Average Latency',
     tokensConsumed: 'Tokens Consumed',
     successRate: 'Success Rate',
     versionHistory: 'Version History',
+
+    // Bot page: view switcher, playground and recent activity
+    viewOverview: 'Overview',
+    viewStudio: 'Studio',
+    studioTabChat: 'Playground',
+    studioTabConfigure: 'Configure',
+    atAGlance: 'At a glance',
+    recentActivity: 'Recent activity',
+    noRunsYet: 'No runs yet',
+    runInput: 'Input',
+    runOutput: 'Output',
+    integrations: 'Integrations',
+    noDescription: 'No description',
+    playgroundHint: 'Test this bot exactly as an end user would.',
+    botOfferTitle: 'Bot created',
+    botOfferBody: 'Your conversation is saved in the chat history.',
+    stayInChat: 'Keep chatting',
+    noModelDeterministic: 'No model · deterministic',
     conversationsHistory: 'Test Sessions with this Bot',
     pythonSdk: 'Python (google-genai)',
     typeScriptSdk: 'TypeScript (@google/genai)',
@@ -472,7 +599,6 @@ export const translations: Record<SupportedLocale, Translations> = {
     categoryModel: 'Model',
     toolTelemetry: 'Tools Observability & Statistics',
     totalInvocations: 'Total Invocations',
-    p99Latency: 'P99 Latency',
     lastInvoked: 'Last Invoked',
     callsCount: 'Calls',
     operational: 'Operational',
@@ -533,7 +659,7 @@ export const translations: Record<SupportedLocale, Translations> = {
     botGenerationMode: 'Bot Builder',
     botGenerationHero: 'Build AI Bots with Meta Agent',
     botGenerationSubtitle: 'Converse with the builder agent below to architect models, tools, and system instructions.',
-    appName: 'Aetheris Studio',
+    appName: 'Aetheris',
     authTagline: 'Design, tune and publish AI agents from one calm workspace.',
     authSignInTitle: 'Welcome back',
     authSignUpTitle: 'Create your workspace',
@@ -565,6 +691,83 @@ export const translations: Record<SupportedLocale, Translations> = {
     addCapability: 'Add to Bot',
     adjustHyperparameters: 'Hyperparameters & Temp',
 
+
+    // The studio
+    whatDoYouWantToBuild: 'What do you want to build?',
+    buildPlaceholder: 'Describe the bot you want...',
+    buildHint: 'One chat builds one bot. Start a new chat to build a different one.',
+    buildingYourBot: 'Building your bot...',
+    yourBotIsReady: 'Your bot is ready.',
+    created: 'Created',
+    previewBot: 'Preview bot',
+    openPreview: 'Open preview',
+    collapsePreview: 'Collapse preview',
+    expandPreview: 'Expand preview',
+    previewTitle: 'Bot preview',
+    liveBot: 'Live bot',
+    previewEmpty: 'Send a message to try your bot.',
+    previewPlaceholder: 'Message your bot...',
+    artifactDraft: 'Draft',
+    artifactReady: 'Ready',
+    artifactPublished: 'Published',
+    publish: 'Publish',
+    instructionsLabel: 'Instructions',
+    modelLabel: 'Model',
+    knowledgeLabel: 'Knowledge',
+    toolsLabel: 'Tools',
+    variablesLabel: 'Variables',
+    noKnowledge: 'No sources attached',
+    noTools: 'No tools attached',
+    noVariables: 'No variables',
+    addVariable: 'Add variable',
+    variableName: 'Name',
+    variableValue: 'Value',
+    variableHint: 'Reference a variable from the instructions as {{name}}.',
+    sourceCount: 'source',
+    botMode: 'Bot',
+    comingSoonModes: 'Coming soon',
+    modeMenuTitle: 'Builder modes',
+    youLabel: 'You',
+    assistantLabel: 'Bot Builder',
+    appTitle: 'Agent Builder',
+    editMessage: 'Edit',
+    moreActionsLabel: 'More',
+    runBot: 'Run',
+    newChatLabel: 'New chat',
+    whatChanged: 'What changed',
+    newResponse: 'New response',
+    attachFilesLabel: 'Attach files',
+    removeAttachment: 'Remove',
+    suggestionSupport: 'Customer support bot',
+    suggestionSales: 'Sales assistant',
+    suggestionKnowledge: 'Knowledge-based bot',
+    chatEmptyHint: "Describe the bot you want, and I'll help you create it.",
+    configureBot: 'Configure',
+    botPreviewName: 'Preview bot',
+    // Bot architecture
+    rulesLabel: 'Rules',
+    dataLabel: 'Data',
+    actionsLabel: 'Actions',
+    noRules: 'No rules yet',
+    botAiLabel: 'AI',
+    botHybridLabel: 'Rules + AI',
+    botRulesLabel: 'Rules',
+    botDataLabel: 'Database',
+    // Build progress
+    progressUnderstanding: 'Understanding your requirements',
+    progressPlanning: 'Planning the bot',
+    progressInstructions: 'Creating instructions',
+    progressKnowledge: 'Adding knowledge',
+    progressData: 'Configuring database access',
+    progressActions: 'Configuring actions',
+    progressVariables: 'Setting up variables',
+    progressPreparing: 'Preparing the bot',
+    progressTesting: 'Testing the configuration',
+    progressReady: 'Bot ready',
+    stepFailed: "This step couldn't be completed",
+    detailsLabel: 'Details',
+    suggestionData: 'Reads and updates customer orders',
+    suggestionDeterministic: 'Processes refund requests by rule',
     // Global & General
     cancel: 'Cancel',
     save: 'Save',
@@ -578,8 +781,14 @@ export const translations: Record<SupportedLocale, Translations> = {
   fa: {
     // Navigation
     workspace: 'فضای کاری',
+    pageNotFound: 'صفحه پیدا نشد',
+    backToChat: 'بازگشت به گفتگو',
+    somethingWentWrong: 'مشکلی پیش آمد',
+    retry: 'تلاش دوباره',
+    newConversation: 'گفتگوی جدید',
     newChat: 'گفتگوی جدید',
     bots: 'بات‌ها',
+    chat: 'گفتگو',
     tools: 'ابزارها',
     knowledge: 'منابع دانش',
     history: 'تاریخچه',
@@ -595,6 +804,7 @@ export const translations: Record<SupportedLocale, Translations> = {
     searchPlaceholder: 'جستجوی گفتگوها، بات‌ها، ابزارها...',
     collapseSidebar: 'بستن منو',
     expandSidebar: 'باز کردن منو',
+    comingSoon: 'به‌زودی',
 
     // New Chat (Home)
     heroTitle: 'چه چیزی می‌خواهید بسازید؟',
@@ -667,10 +877,27 @@ export const translations: Record<SupportedLocale, Translations> = {
     testPromptPlaceholder: 'یک پیام برای شبیه‌سازی رفتار این بات وارد کنید...',
     version: 'نسخه',
     totalRuns: 'تعداد کل اجراها',
-    avgLatency: 'میانگین زمان پاسخ',
     tokensConsumed: 'توکن‌های مصرف‌شده',
     successRate: 'درصد پاسخ‌های موفق',
     versionHistory: 'تاریخچه نسخه‌ها',
+
+    // صفحه بات: جابه‌جایی نما، زمین بازی و فعالیت اخیر
+    viewOverview: 'نمای کلی',
+    viewStudio: 'استودیو',
+    studioTabChat: 'زمین بازی',
+    studioTabConfigure: 'پیکربندی',
+    atAGlance: 'نگاه سریع',
+    recentActivity: 'فعالیت اخیر',
+    noRunsYet: 'هنوز اجرایی ثبت نشده',
+    runInput: 'ورودی',
+    runOutput: 'خروجی',
+    integrations: 'اتصال‌ها',
+    noDescription: 'بدون توضیحات',
+    playgroundHint: 'بات را دقیقاً مثل کاربر نهایی آزمایش کنید.',
+    botOfferTitle: 'بات ساخته شد',
+    botOfferBody: 'گفتگوی شما در تاریخچه چت ذخیره شده است.',
+    stayInChat: 'ادامه گفتگو',
+    noModelDeterministic: 'بدون مدل · قطعی',
     conversationsHistory: 'نشست‌های آزمایشی این بات',
     pythonSdk: 'پایتون (google-genai)',
     typeScriptSdk: 'تایپ‌اسکریپت (@google/genai)',
@@ -759,7 +986,6 @@ export const translations: Record<SupportedLocale, Translations> = {
     categoryModel: 'مدل محاسباتی',
     toolTelemetry: 'آمار و نظارت بر کارکرد ابزارها',
     totalInvocations: 'مجموع فراخوانی‌ها',
-    p99Latency: 'تاخیر صدک ۹۹ (P99)',
     lastInvoked: 'آخرین اجرا',
     callsCount: 'فراخوانی',
     operational: 'عملیاتی و آماده',
@@ -820,7 +1046,7 @@ export const translations: Record<SupportedLocale, Translations> = {
     botGenerationMode: 'ایجنت سازنده',
     botGenerationHero: 'ساخت و معماری بات با ایجنت',
     botGenerationSubtitle: 'با دستیار طراح در کادر زیر گفتگو کنید تا مدل، ابزارها و پرامپت سیستم تنظیم شود.',
-    appName: 'استودیو آتریس',
+    appName: 'آتریس',
     authTagline: 'طراحی، تنظیم و انتشار ایجنت‌های هوش مصنوعی در یک محیط آرام.',
     authSignInTitle: 'خوش آمدید',
     authSignUpTitle: 'ساخت فضای کاری',
@@ -851,6 +1077,82 @@ export const translations: Record<SupportedLocale, Translations> = {
     toolMoodDesc: 'ابزارها و وب‌هوک‌های اختصاصی (آلفا)',
     addCapability: 'افزودن قابلیت به بات',
     adjustHyperparameters: 'پارامترهای مدل و دما',
+
+
+    // The studio
+    whatDoYouWantToBuild: '\u0686\u0647 \u0686\u06cc\u0632\u06cc \u0645\u06cc\u062e\u0648\u0627\u0647\u06cc\u062f \u0628\u0633\u0627\u0632\u06cc\u062f\u061f',
+    buildPlaceholder: '\u0628\u0627\u062a \u06cc\u06a9\u0633\u0627\u0633\u0628\u0637 \u0645\u06cc\u062e\u0648\u0627\u0647\u06cc\u062f \u0628\u0646\u0648\u06cc\u0633\u06cc\u062f...',
+    buildHint: '\u0647\u0631 \u06af\u0641\u062a\u06af\u0648 \u06cc\u06a9 \u0628\u0627\u062a \u0645\u06cc\u0633\u0627\u0632\u06cc\u062f. \u0628\u0631\u0627\u06cc \u0628\u0627\u062a \u062f\u06cc\u06af\u0631 \u06af\u0641\u062a\u06af\u0648 \u0628\u0627\u0632\u06cc\u062f \u062c\u062f\u06cc\u062f \u0628\u0633\u0627\u0632\u06cc\u062f.',
+    buildingYourBot: '\u062f\u0627\u0631\u06cc\u062f \u0633\u0627\u062e\u062a\u0646 \u0628\u0627\u062a \u0634\u0645\u0627...',
+    yourBotIsReady: '\u0628\u0627\u062a \u0634\u0645\u0627 \u0622\u0645\u0627\u062f\u0647 \u0627\u0633\u062a.',
+    created: '\u0633\u0627\u062e\u062a\u0647 \u0634\u062f',
+    previewBot: '\u067e\u06cc\u0634\u06cc\u0628\u0627\u0646\u06cc \u0628\u0627\u062a',
+    openPreview: '\u0628\u0627\u0632 \u06a9\u0631\u062f\u0646 \u067e\u06cc\u0634\u06cc\u0628\u0627\u0646\u06cc',
+    collapsePreview: '\u0628\u0633\u062a\u0646 \u067e\u06cc\u0634\u06cc\u0628\u0627\u0646\u06cc',
+    expandPreview: '\u06af\u0633\u062a\u0631\u0627\u0646\u0647 \u067e\u06cc\u0634\u06cc\u0628\u0627\u0646\u06cc',
+    previewTitle: '\u067e\u06cc\u0634\u06cc\u0628\u0627\u0646\u06cc \u0628\u0627\u062a',
+    liveBot: '\u0628\u0627\u062a \u0632\u0646\u062f\u0647',
+    previewEmpty: '\u0628\u0631\u0627\u06cc \u0627\u0632\u0627\u0646\u062f\u0647\u0627\u0646 \u06cc\u06a9 \u067e\u06cc\u0634\u06cc\u0628\u0627\u0646\u06cc \u0628\u0641\u0631\u06cc\u0627\u06cc\u062f.',
+    previewPlaceholder: '\u067e\u06cc\u0627\u0645 \u0628\u0647 \u0628\u0627\u062a...',
+    artifactDraft: '\u067e\u06cc\u0634\u0646\u0648\u0633',
+    artifactReady: '\u0622\u0645\u0627\u062f\u0647',
+    artifactPublished: '\u0645\u0646\u062a\u0634\u0631 \u0634\u062f\u0647',
+    publish: '\u0627\u0646\u062a\u0634\u0627\u0631',
+    instructionsLabel: '\u062f\u0633\u062a\u0648\u0631\u0627\u062a',
+    modelLabel: '\u0645\u062f\u0644',
+    knowledgeLabel: '\u062f\u0627\u0646\u0634',
+    toolsLabel: '\u0627\u0628\u0632\u0627\u0631\u0647\u0627',
+    variablesLabel: '\u0645\u062a\u063a\u06cc\u0631\u0647\u0627',
+    noKnowledge: '\u0645\u0646\u0628\u0639\u06cc \u0627\u062a\u0635\u0644 \u0646\u0634\u062f\u0647',
+    noTools: '\u0627\u0628\u0632\u0627\u0631\u06cc \u0627\u062a\u0635\u0644 \u0646\u0634\u062f\u0647',
+    noVariables: '\u0645\u062a\u063a\u06cc\u0631\u06cc \u0646\u06cc\u0633\u062a',
+    addVariable: '\u0627\u0641\u0632\u0648\u062f\u0646 \u0645\u062a\u063a\u06cc\u0631',
+    variableName: '\u0646\u0627\u0645',
+    variableValue: '\u0645\u0642\u0627\u062f\u06cc\u0631',
+    variableHint: '\u0628\u0631\u0627\u06cc \u0627\u062f\u0639\u0627\u0646 \u0645\u062a\u063a\u06cc\u0631 \u0627\u0632 \u062f\u0633\u062a\u0648\u0631\u0627\u062a \u0628\u0635\u0648\u0631\u062a {{name}} \u0627\u0633\u062a\u0641\u0627\u0642 \u0628\u06af\u06cc\u0631\u06cc\u062f.',
+    sourceCount: '\u0645\u0646\u0628\u0639',
+    botMode: '\u0628\u0627\u062a',
+    comingSoonModes: '\u0628\u0647\u200c\u0632\u0648\u062f\u06cc',
+    modeMenuTitle: '\u062d\u0627\u0644\u062a\u200c\u0647\u0627\u06cc \u0633\u0627\u062e\u062a\u0646',
+    youLabel: '\u0634\u0645\u0627',
+    assistantLabel: '\u0628\u0627\u062a\u200c\u0633\u0627\u0632',
+    appTitle: '\u0633\u0627\u0632\u0647 \u0628\u0627\u062a',
+    editMessage: '\u0648\u06cc\u0631\u0627\u06cc\u0634',
+    moreActionsLabel: '\u0628\u06cc\u0634\u062a\u0631',
+    runBot: '\u0627\u062c\u0631\u0627',
+    newChatLabel: '\u06af\u0641\u062a\u06af\u0648\u06cc \u062c\u062f\u06cc\u062f',
+    whatChanged: '\u062a\u063a\u06cc\u06cc\u0631\u0627\u062a',
+    newResponse: '\u067e\u0627\u0633\u062e \u062c\u062f\u06cc\u062f',
+    attachFilesLabel: '\u067e\u06cc\u0648\u0633\u062a \u0641\u0627\u06cc\u0644',
+    removeAttachment: '\u062d\u0630\u0641',
+    suggestionSupport: '\u0631\u0628\u0627\u062a \u067e\u0634\u062a\u06cc\u0628\u0627\u0646\u06cc \u0645\u0634\u062a\u0631\u06cc',
+    suggestionSales: '\u062f\u0633\u062a\u06cc\u0627\u0631 \u0641\u0631\u0648\u0634',
+    suggestionKnowledge: '\u0631\u0628\u0627\u062a \u062f\u0627\u0646\u0634\u200c\u0645\u062d\u0648\u0631',
+    chatEmptyHint: '\u0628\u0627\u062a \u0645\u0648\u0631\u062f\u0646\u0638\u0631\u0627 \u062a\u0648\u0635\u06cc\u0641 \u06a9\u0646\u06cc\u062f\u060c \u0645\u0646 \u0628\u0631\u0627\u06cc \u0633\u0627\u062e\u062a\u0646\u0634 \u0627\u06cc\u0632 \u0631\u0627\u0647\u0646\u062f\u0647 \u0645\u06cc\u06af\u0632\u0645.',
+    configureBot: '\u067e\u06cc\u06a9\u0631\u0628\u0646\u062f\u06cc',
+    botPreviewName: '\u067e\u06cc\u0634\u06cc\u0628\u0627\u0646\u06cc \u0628\u0627\u062a',
+    rulesLabel: '\u0642\u0648\u0627\u0646\u06cc\u0646',
+    dataLabel: '\u062f\u0627\u062f\u0647',
+    actionsLabel: '\u06a9\u0646\u0634\u200c\u0647\u0627',
+    noRules: '\u0647\u0646\u0648\u0632 \u0642\u0627\u0646\u0648\u0646\u06cc \u0646\u06cc\u0633\u062a',
+    botAiLabel: '\u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc',
+    botHybridLabel: '\u0642\u0648\u0627\u0646\u06cc\u0646 + \u0647\u0648\u0634 \u0645\u0635\u0646\u0648\u0639\u06cc',
+    botRulesLabel: '\u0642\u0648\u0627\u0646\u06cc\u0646',
+    botDataLabel: '\u067e\u0627\u06cc\u06af\u0627\u0647 \u062f\u0627\u062f\u0647',
+    progressUnderstanding: '\u062f\u0631\u06a9 \u0646\u06cc\u0627\u0632\u0647\u0627\u06cc \u0634\u0645\u0627',
+    progressPlanning: '\u0628\u0631\u0646\u0627\u0645\u0647\u200c\u0631\u06cc\u0632\u06cc \u0628\u0627\u062a',
+    progressInstructions: '\u0646\u0648\u0634\u062a\u0646 \u062f\u0633\u062a\u0648\u0631\u0627\u0644\u0639\u0645\u0644\u200c\u0647\u0627',
+    progressKnowledge: '\u0627\u0641\u0632\u0648\u062f\u0646 \u062f\u0627\u0646\u0634',
+    progressData: '\u067e\u06cc\u06a9\u0631\u0628\u0646\u062f\u06cc \u062f\u0633\u062a\u0631\u0633\u06cc \u0628\u0647 \u067e\u0627\u06cc\u06af\u0627\u0647 \u062f\u0627\u062f\u0647',
+    progressActions: '\u067e\u06cc\u06a9\u0631\u0628\u0646\u062f\u06cc \u06a9\u0646\u0634\u200c\u0647\u0627',
+    progressVariables: '\u062a\u0646\u0638\u06cc\u0645 \u0645\u062a\u063a\u06cc\u0631\u0647\u0627',
+    progressPreparing: '\u0622\u0645\u0627\u062f\u0647\u200c\u0633\u0627\u0632\u06cc \u0628\u0627\u062a',
+    progressTesting: '\u0622\u0632\u0645\u0627\u06cc\u0634 \u067e\u06cc\u06a9\u0631\u0628\u0646\u062f\u06cc',
+    progressReady: '\u0628\u0627\u062a \u0622\u0645\u0627\u062f\u0647 \u0627\u0633\u062a',
+    stepFailed: '\u0627\u06cc\u0646 \u0645\u0631\u062d\u0644\u0647 \u0627\u0646\u062c\u0627\u0645 \u0646\u0634\u062f',
+    detailsLabel: '\u062c\u0632\u0626\u06cc\u0627\u062a',
+    suggestionData: '\u0633\u0641\u0627\u0631\u0634\u200c\u0647\u0627\u06cc \u0645\u0634\u062a\u0631\u06cc \u0631\u0627 \u0645\u06cc\u200c\u062e\u0648\u0627\u0646\u062f \u0648 \u0628\u0647\u200c\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u0645\u06cc\u200c\u06a9\u0646\u062f',
+    suggestionDeterministic: '\u062f\u0631\u062e\u0648\u0627\u0633\u062a\u200c\u0647\u0627\u06cc \u0628\u0627\u0632\u06af\u0634\u062a \u0648\u062c\u0647 \u0631\u0627 \u0637\u0628\u0642 \u0642\u0627\u0646\u0648\u0646 \u067e\u0631\u062f\u0627\u0632\u0634 \u0645\u06cc\u200c\u06a9\u0646\u062f',
 
     // Global & General
     cancel: 'انصراف',
